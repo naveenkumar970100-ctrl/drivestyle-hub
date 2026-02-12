@@ -3,6 +3,7 @@ const cors = require('cors');
 const morgan = require('morgan');
 const mongoose = require('mongoose');
 const { config } = require('./config/env');
+const nodemailer = require('nodemailer');
 const { connectDB } = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
@@ -26,6 +27,24 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'backend', env: config.NODE_ENV || 'development', db: dbState });
 });
 app.get('/__ping', (req, res) => res.json({ ok: true }));
+
+app.get('/api/health/smtp', async (req, res) => {
+  try {
+    if (!config.SMTP_HOST || !config.SMTP_USER || !config.SMTP_PASS) {
+      return res.status(400).json({ status: 'error', message: 'SMTP not configured' });
+    }
+    const transporter = nodemailer.createTransport({
+      host: config.SMTP_HOST,
+      port: Number(config.SMTP_PORT || 587),
+      secure: false,
+      auth: { user: config.SMTP_USER, pass: config.SMTP_PASS },
+    });
+    await transporter.verify();
+    res.json({ status: 'ok', service: 'smtp', provider: config.SMTP_HOST });
+  } catch (err) {
+    res.status(500).json({ status: 'error', service: 'smtp', message: err?.message || 'SMTP verify failed' });
+  }
+});
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);

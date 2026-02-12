@@ -2,15 +2,10 @@ const path = require('path');
 const fs = require('fs');
 const dotenv = require('dotenv');
 
-const tryLoad = (p) => {
-  if (fs.existsSync(p)) {
-    dotenv.config({ path: p, override: true });
-  }
-};
-
-tryLoad(path.resolve(__dirname, '../../.env'));
-tryLoad(path.resolve(__dirname, '../../../.env'));
-tryLoad(path.resolve(__dirname, '../../../.env.local'));
+const envPath = path.resolve(__dirname, '../../.env');
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath, override: true });
+}
 
 const config = {
   NODE_ENV: process.env.NODE_ENV || 'development',

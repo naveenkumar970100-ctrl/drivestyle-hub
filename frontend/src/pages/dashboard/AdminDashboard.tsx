@@ -1,15 +1,18 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Users, UserCheck, UserX, ShoppingBag, TrendingUp, DollarSign } from "lucide-react";
+import { Users, UserCheck, UserX, ShoppingBag, TrendingUp, DollarSign, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { listApprovals, setApprovalStatus, listRegistrations, deleteRegistration, listApprovalEvents, listBookings, listServices, addService, updateService, deleteService, setServicePrice, setBookingStatus, assignBookingSlot, listStaff, addStaff, deleteStaff, assignJob, listJobs, setJobStatus, listPayments, addPayment, setPaymentStatus, listInvoices, generateInvoice, markInvoicePaid, createAdminUser, addRegistration, type Approval, type Registration, type ApprovalEvent, type Booking, type ServiceItem, type VehicleType, type BookingStatus, type StaffMember, type StaffRoleType, type Job, type JobStatus, type Payment, type Invoice } from "@/lib/utils";
+import { listApprovals, setApprovalStatus, listRegistrations, deleteRegistration, listApprovalEvents, listBookings, listServices, addService, updateService, deleteService, setServicePrice, setBookingStatus, assignBookingSlot, listStaff, addStaff, deleteStaff, assignJob, listJobs, setJobStatus, listPayments, addPayment, setPaymentStatus, listInvoices, generateInvoice, markInvoicePaid, createAdminUser, addRegistration, listUsersFromApi, deleteUserByAdmin, type ApiUser, type Approval, type Registration, type ApprovalEvent, type Booking, type ServiceItem, type VehicleType, type BookingStatus, type StaffMember, type StaffRoleType, type Job, type JobStatus, type Payment, type Invoice } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "react-router-dom";
+import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
 const stats = [
   { label: "Total Users", value: "2,456", icon: Users, change: "+12%" },
@@ -49,9 +52,66 @@ const AdminDashboard = () => {
   const [newService, setNewService] = useState({ title: "", desc: "", price: 0 });
   type MemberRole = "Staff" | "Merchant";
   const [newStaff, setNewStaff] = useState<{ name: string; email: string; role: MemberRole }>({ name: "", email: "", role: "Staff" });
-  const [newMerchant, setNewMerchant] = useState<{ shopName: string; email: string; phone: string; location: string; password: string }>({ shopName: "", email: "", phone: "", location: "", password: "" });
-  const [newStaffAccount, setNewStaffAccount] = useState<{ name: string; email: string; phone: string; staffRole: string; password: string }>({ name: "", email: "", phone: "", staffRole: "Staff", password: "" });
+  const [newMerchant, setNewMerchant] = useState<{ shopName: string; email: string; phone: string; address: string; location: string; password: string }>({ shopName: "", email: "", phone: "", address: "", location: "", password: "" });
+  const [newStaffAccount, setNewStaffAccount] = useState<{ name: string; email: string; phone: string; staffRole: string; location: string; password: string }>({ name: "", email: "", phone: "", staffRole: "Staff", location: "", password: "" });
   const refresh = () => setPending(listApprovals("pending"));
+  const [merchantPos, setMerchantPos] = useState<[number, number] | null>(null);
+  const [staffPos, setStaffPos] = useState<[number, number] | null>(null);
+  const [savingMerchant, setSavingMerchant] = useState(false);
+  const [savingStaff, setSavingStaff] = useState(false);
+  const [users, setUsers] = useState<ApiUser[]>([]);
+  delete (L.Icon.Default as any).prototype._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: new URL("leaflet/dist/images/marker-icon-2x.png", import.meta.url).toString(),
+    iconUrl: new URL("leaflet/dist/images/marker-icon.png", import.meta.url).toString(),
+    shadowUrl: new URL("leaflet/dist/images/marker-shadow.png", import.meta.url).toString(),
+  });
+  const updateFromLatLng = (latStr?: string, lngStr?: string) => {
+    const lt = typeof latStr === "string" ? parseFloat(latStr) : NaN;
+    const lg = typeof lngStr === "string" ? parseFloat(lngStr) : NaN;
+    if (!Number.isNaN(lt) && !Number.isNaN(lg)) {
+      setMerchantPos([lt, lg]);
+      setNewMerchant((m) => ({ ...m, location: `${lt.toFixed(6)},${lg.toFixed(6)}` }));
+    }
+  };
+  const ClickMarker = () => {
+    useMapEvents({
+      click(e) {
+        const { lat, lng } = e.latlng;
+        setMerchantPos([lat, lng]);
+        setNewMerchant({ ...newMerchant, location: `${lat.toFixed(6)},${lng.toFixed(6)}` });
+      },
+    });
+    return merchantPos ? <Marker position={merchantPos} /> : null;
+  };
+  const ClickMarkerStaff = () => {
+    useMapEvents({
+      click(e) {
+        const { lat, lng } = e.latlng;
+        setStaffPos([lat, lng]);
+        setNewStaffAccount({ ...newStaffAccount, location: `${lat.toFixed(6)},${lng.toFixed(6)}` });
+      },
+    });
+    return staffPos ? <Marker position={staffPos} /> : null;
+  };
+  const useMyLocation = () => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition((pos) => {
+        const { latitude, longitude } = pos.coords;
+        setMerchantPos([latitude, longitude]);
+        setNewMerchant({ ...newMerchant, location: `${latitude.toFixed(6)},${longitude.toFixed(6)}` });
+      });
+    }
+  };
+  const useMyLocationStaff = () => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition((pos) => {
+        const { latitude, longitude } = pos.coords;
+        setStaffPos([latitude, longitude]);
+        setNewStaffAccount({ ...newStaffAccount, location: `${latitude.toFixed(6)},${longitude.toFixed(6)}` });
+      });
+    }
+  };
   useEffect(() => {
     refresh();
     setRegistrations(listRegistrations());
@@ -61,6 +121,14 @@ const AdminDashboard = () => {
     setJobs(listJobs());
     setPayments(listPayments());
     setInvoices(listInvoices());
+    (async () => {
+      try {
+        const u = await listUsersFromApi();
+        setUsers(u);
+      } catch (e) {
+        // ignore
+      }
+    })();
   }, []);
   useEffect(() => {
     setServices(listServices(vehicleType));
@@ -141,30 +209,65 @@ const AdminDashboard = () => {
                       <Input value={newMerchant.phone} onChange={(e) => setNewMerchant({ ...newMerchant, phone: e.target.value })} />
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm font-medium">Location</label>
-                      <Input value={newMerchant.location} onChange={(e) => setNewMerchant({ ...newMerchant, location: e.target.value })} />
-                    </div>
-                    <div>
                       <label className="mb-1 block text-sm font-medium">Password</label>
                       <Input type="password" value={newMerchant.password} onChange={(e) => setNewMerchant({ ...newMerchant, password: e.target.value })} />
                     </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">Address</label>
+                      <Input value={newMerchant.address} onChange={(e) => setNewMerchant({ ...newMerchant, address: e.target.value })} placeholder="Street, City, State, ZIP" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">Location</label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={newMerchant.location}
+                          onChange={(e) => setNewMerchant({ ...newMerchant, location: e.target.value })}
+                          onBlur={(e) => {
+                            const parts = e.target.value.split(",").map((s) => s.trim());
+                            if (parts.length === 2) {
+                              updateFromLatLng(parts[0], parts[1]);
+                            }
+                          }}
+                          placeholder="lat, lng"
+                        />
+                        <Button type="button" variant="outline" onClick={useMyLocation}>Use My Location</Button>
+                      </div>
+                      <div className="mt-3 rounded-lg border">
+                        <MapContainer
+                          {...({
+                            center: (merchantPos ?? [12.9716, 77.5946]) as [number, number],
+                            zoom: 13,
+                            style: { height: 256 },
+                            scrollWheelZoom: true,
+                          } as any)}
+                        >
+                          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                          <ClickMarker />
+                        </MapContainer>
+                      </div>
+                    </div>
                     <Button
+                      disabled={savingMerchant}
                       onClick={async () => {
                         if (!newMerchant.shopName || !newMerchant.email || !newMerchant.phone || !newMerchant.location || !newMerchant.password) return;
                         try {
+                          setSavingMerchant(true);
                           await createAdminUser({ role: "merchant", shopName: newMerchant.shopName, email: newMerchant.email, phone: newMerchant.phone, location: newMerchant.location, password: newMerchant.password });
-                          addRegistration({ name: newMerchant.shopName, email: newMerchant.email, role: "Merchant" });
+                          addRegistration({ name: newMerchant.shopName, email: newMerchant.email, role: "Merchant", address: newMerchant.address });
                           toast({ title: "Merchant created", description: `${newMerchant.email}` });
-                          setNewMerchant({ shopName: "", email: "", phone: "", location: "", password: "" });
+                          setNewMerchant({ shopName: "", email: "", phone: "", address: "", location: "", password: "" });
                           setRegistrations(listRegistrations());
+                          try { const u = await listUsersFromApi(); setUsers(u); } catch (e) { void e; }
                         } catch (err) {
                           const message = err instanceof Error ? err.message : String(err);
                           toast({ title: "Failed", description: message, variant: "destructive" });
+                        } finally {
+                          setSavingMerchant(false);
                         }
                       }}
                       className="w-full gradient-accent border-0 text-accent-foreground"
                     >
-                      Save
+                      {savingMerchant ? (<span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving...</span>) : "Save"}
                     </Button>
                   </div>
                 </DialogContent>
@@ -194,23 +297,63 @@ const AdminDashboard = () => {
                       <label className="mb-1 block text-sm font-medium">Password</label>
                       <Input type="password" value={newStaffAccount.password} onChange={(e) => setNewStaffAccount({ ...newStaffAccount, password: e.target.value })} />
                     </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">Location</label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={newStaffAccount.location}
+                        onChange={(e) => setNewStaffAccount({ ...newStaffAccount, location: e.target.value })}
+                        onBlur={(e) => {
+                          const parts = e.target.value.split(",").map((s) => s.trim());
+                          if (parts.length === 2) {
+                            const lt = parseFloat(parts[0]);
+                            const lg = parseFloat(parts[1]);
+                            if (!Number.isNaN(lt) && !Number.isNaN(lg)) {
+                              setStaffPos([lt, lg]);
+                              setNewStaffAccount((m) => ({ ...m, location: `${lt.toFixed(6)},${lg.toFixed(6)}` }));
+                            }
+                          }
+                        }}
+                        placeholder="lat, lng"
+                      />
+                      <Button type="button" variant="outline" onClick={useMyLocationStaff}>Use My Location</Button>
+                    </div>
+                    <div className="mt-3 rounded-lg border">
+                      <MapContainer
+                        {...({
+                          center: (staffPos ?? [12.9716, 77.5946]) as [number, number],
+                          zoom: 13,
+                          style: { height: 256 },
+                          scrollWheelZoom: true,
+                        } as any)}
+                      >
+                        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                        <ClickMarkerStaff />
+                      </MapContainer>
+                    </div>
+                  </div>
                     <Button
+                    disabled={savingStaff}
                       onClick={async () => {
-                        if (!newStaffAccount.name || !newStaffAccount.email || !newStaffAccount.phone || !newStaffAccount.password) return;
+                      if (!newStaffAccount.name || !newStaffAccount.email || !newStaffAccount.phone || !newStaffAccount.location || !newStaffAccount.password) return;
                         try {
-                          await createAdminUser({ role: "staff", name: newStaffAccount.name, email: newStaffAccount.email, phone: newStaffAccount.phone, staffRole: newStaffAccount.staffRole, password: newStaffAccount.password });
+                        setSavingStaff(true);
+                        await createAdminUser({ role: "staff", name: newStaffAccount.name, email: newStaffAccount.email, phone: newStaffAccount.phone, staffRole: newStaffAccount.staffRole, location: newStaffAccount.location, password: newStaffAccount.password });
                           addRegistration({ name: newStaffAccount.name, email: newStaffAccount.email, role: "Staff" });
                           toast({ title: "Staff created", description: `${newStaffAccount.email}` });
-                          setNewStaffAccount({ name: "", email: "", phone: "", staffRole: "Staff", password: "" });
+                        setNewStaffAccount({ name: "", email: "", phone: "", staffRole: "Staff", location: "", password: "" });
                           setRegistrations(listRegistrations());
+                          try { const u = await listUsersFromApi(); setUsers(u); } catch (e) { void e; }
                         } catch (err) {
                           const message = err instanceof Error ? err.message : String(err);
                           toast({ title: "Failed", description: message, variant: "destructive" });
+                      } finally {
+                        setSavingStaff(false);
                         }
                       }}
                       className="w-full gradient-accent border-0 text-accent-foreground"
                     >
-                      Save
+                    {savingStaff ? (<span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving...</span>) : "Save"}
                     </Button>
                   </div>
                 </DialogContent>
@@ -522,8 +665,8 @@ const AdminDashboard = () => {
             </Dialog>
           </div>
           <div className="mt-4 space-y-3">
-            {listRegistrations("Merchant").length === 0 && <div className="rounded-lg border p-4 text-sm text-muted-foreground">No merchants</div>}
-            {listRegistrations("Merchant").map((m) => (
+            {users.filter((u) => u.role === "merchant").length === 0 && <div className="rounded-lg border p-4 text-sm text-muted-foreground">No merchants</div>}
+            {users.filter((u) => u.role === "merchant").map((m) => (
               <div key={m.email} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="font-medium">{m.name}</div>
@@ -531,22 +674,54 @@ const AdminDashboard = () => {
                 </div>
                 <div className="flex items-center gap-3">
                   <Badge variant="outline">Merchant</Badge>
-                  <Button size="sm" variant="destructive" onClick={() => { deleteRegistration(m.email); setRegistrations(listRegistrations()); }}>Remove</Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={async () => {
+                      try {
+                        await deleteUserByAdmin(m.id);
+                        const u = await listUsersFromApi();
+                        setUsers(u);
+                        toast({ title: "Merchant removed", description: m.email });
+                      } catch (err) {
+                        const message = err instanceof Error ? err.message : String(err);
+                        toast({ title: "Failed to remove", description: message, variant: "destructive" });
+                      }
+                    }}
+                  >
+                    Remove
+                  </Button>
                 </div>
               </div>
             ))}
           </div>
           <div className="mt-4 space-y-3">
-            {staff.length === 0 && <div className="rounded-lg border p-4 text-sm text-muted-foreground">No team members</div>}
-            {staff.map((m) => (
-              <div key={m.id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+            {users.filter((u) => u.role === "staff").length === 0 && <div className="rounded-lg border p-4 text-sm text-muted-foreground">No team members</div>}
+            {users.filter((u) => u.role === "staff").map((m) => (
+              <div key={m.email} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="font-medium">{m.name}</div>
                   <div className="text-sm text-muted-foreground">{m.email}</div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Badge variant="secondary">{m.role}</Badge>
-                  <Button size="sm" variant="destructive" onClick={() => { deleteStaff(m.id); setStaff(listStaff()); }}>Remove</Button>
+                  <Badge variant="secondary">Staff</Badge>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={async () => {
+                      try {
+                        await deleteUserByAdmin(m.id);
+                        const u = await listUsersFromApi();
+                        setUsers(u);
+                        toast({ title: "Staff removed", description: m.email });
+                      } catch (err) {
+                        const message = err instanceof Error ? err.message : String(err);
+                        toast({ title: "Failed to remove", description: message, variant: "destructive" });
+                      }
+                    }}
+                  >
+                    Remove
+                  </Button>
                 </div>
               </div>
             ))}

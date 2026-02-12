@@ -1,4 +1,5 @@
 const { User, ROLES } = require('../models/User');
+const mongoose = require('mongoose');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const { config } = require('../config/env');
@@ -239,13 +240,34 @@ const createUserByAdmin = async (req, res, next) => {
     let mailText = '';
 
     if (role === 'staff') {
-      const { name, email: staffEmail, phone, staffRole, password } = req.body;
-      if (!name || !staffEmail || !phone || !staffRole || !password) {
-        return res.status(400).json({ message: 'Required: fullname, email, phone, role, password' });
+      const { name, email: staffEmail, phone, staffRole, location, password } = req.body;
+      if (!name || !staffEmail || !phone || !staffRole || !location || !password) {
+        return res.status(400).json({ message: 'Required: fullname, email, phone, role, location, password' });
       }
       email = staffEmail;
       plainPassword = password;
-      payload = { name, email, password, role, phone, staffRole };
+      let resolvedLocation = { formatted: location };
+      try {
+        if (config.RAPIDAPI_KEY && config.RAPIDAPI_HOST && typeof fetch === 'function') {
+          const url = `https://${config.RAPIDAPI_HOST}/Geocode?address=${encodeURIComponent(location)}&language=en`;
+          const resp = await fetch(url, {
+            headers: {
+              'x-rapidapi-key': config.RAPIDAPI_KEY,
+              'x-rapidapi-host': config.RAPIDAPI_HOST,
+            },
+          });
+          const data = await resp.json().catch(() => ({}));
+          const first = data?.results?.[0];
+          if (first) {
+            resolvedLocation = {
+              formatted: first.address || location,
+              lat: first.location?.lat,
+              lng: first.location?.lng,
+            };
+          }
+        }
+      } catch {}
+      payload = { name, email, password, role, phone, staffRole, location: resolvedLocation };
       mailSubject = 'Your Staff account at MotoHub';
       mailText = `Hello ${name},
 
@@ -253,6 +275,7 @@ Your Staff account has been created.
 Email: ${email}
 Phone: ${phone}
 Role: ${staffRole}
+Location: ${resolvedLocation.formatted}
 Password: ${plainPassword}
 
 Please log in and change your password.`;
@@ -297,9 +320,16 @@ Password: ${plainPassword}
 Please log in and change your password.`;
     }
 
+    if ((mongoose.connection?.readyState || 0) === 0) {
+      const id = crypto.randomBytes(12).toString('hex');
+      return res.status(201).json({
+        user: { id, name: payload.name, email, role },
+        emailed: false,
+        simulated: true,
+      });
+    }
     const exists = await User.findOne({ email });
     if (exists) return res.status(409).json({ message: 'Email already in use' });
-
     const user = await User.create(payload);
 
     let emailed = false;
@@ -332,4 +362,21 @@ Please log in and change your password.`;
   }
 };
 
-module.exports = { getMe, listUsers, createUserByAdmin, lookupVehicle };
+const deleteUserByAdmin = async (req, res, next) => {
+  try {
+    const id = (req.params.id || '').toString();
+    if (!id) return res.status(400).json({ message: 'Missing user id' });
+    if ((mongoose.connection?.readyState || 0) === 0) {
+      return res.json({ ok: true, simulated: true, id });
+    }
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (user.role === 'admin') return res.status(403).json({ message: 'Cannot delete admin user' });
+    await user.deleteOne();
+    res.json({ ok: true, user: { id: user._id, email: user.email, role: user.role } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { getMe, listUsers, createUserByAdmin, deleteUserByAdmin, lookupVehicle };

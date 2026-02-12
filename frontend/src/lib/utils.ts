@@ -76,6 +76,7 @@ export interface Registration {
   name: string;
   email: string;
   role: Role;
+  address?: string;
   date: string;
 }
 
@@ -154,8 +155,18 @@ export function clearAuth() {
   localStorage.removeItem(AUTH_KEY);
 }
 
-type CreateStaffInput = { role: "staff"; name: string; email: string; phone: string; staffRole: string; password: string };
+type CreateStaffInput = { role: "staff"; name: string; email: string; phone: string; staffRole: string; location: string; password: string };
 type CreateMerchantInput = { role: "merchant"; shopName: string; email: string; phone: string; location: string; password: string };
+export type ApiUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "staff" | "merchant" | "customer";
+  phone?: string;
+  shopName?: string;
+  staffRole?: string;
+  location?: { formatted?: string; lat?: number; lng?: number };
+};
 export async function createAdminUser(input: CreateStaffInput | CreateMerchantInput) {
   const session = getAuth();
   if (!session || !session.token || session.role !== "Admin") {
@@ -207,6 +218,86 @@ export async function createAdminUser(input: CreateStaffInput | CreateMerchantIn
     }
   }
   throw new Error(lastError || "Failed to create user");
+}
+
+export async function listUsersFromApi(): Promise<ApiUser[]> {
+  const session = getAuth();
+  const endpoints = [
+    "/api/users",
+    "http://localhost:5000/api/users",
+  ];
+  let lastErr = "Failed to fetch users";
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+        },
+      });
+      let data: any = null;
+      let parsed = true;
+      try {
+        data = await res.json();
+      } catch {
+        parsed = false;
+      }
+      if (res.ok && data && Array.isArray(data.users)) {
+        return (data.users as any[]).map((u) => ({
+          id: String(u.id || u._id || ""),
+          name: String(u.name || ""),
+          email: String(u.email || ""),
+          role: String(u.role || "customer").toLowerCase() as ApiUser["role"],
+          phone: u.phone,
+          shopName: u.shopName,
+          staffRole: u.staffRole,
+          location: u.location,
+        }));
+      }
+      lastErr =
+        (data && typeof data.message === "string" && data.message) ||
+        `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
+}
+
+export async function deleteUserByAdmin(id: string): Promise<{ ok: boolean }> {
+  const session = getAuth();
+  const endpoints = [
+    `/api/users/${encodeURIComponent(id)}`,
+    `http://localhost:5000/api/users/${encodeURIComponent(id)}`,
+  ];
+  let lastErr = "Failed to delete user";
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+        },
+      });
+      let data: any = null;
+      let parsed = true;
+      try {
+        data = await res.json();
+      } catch {
+        parsed = false;
+      }
+      if (res.ok && data && data.ok) {
+        return { ok: true };
+      }
+      lastErr =
+        (data && typeof data.message === "string" && data.message) ||
+        `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
 }
 
 export type BookingStatus = "Upcoming" | "Completed" | "Cancelled";
