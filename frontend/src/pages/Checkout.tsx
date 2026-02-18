@@ -2,33 +2,54 @@ import { Layout } from "@/components/Layout";
 import { motion } from "framer-motion";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { addBooking, getAuth } from "@/lib/utils";
+import { getAuth, createBookingApi } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 
 const fadeUp = { initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.4 } };
 
 const Checkout = () => {
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const vehicle = params.get("vehicle") || "car";
   const service = params.get("service") || "Service";
   const date = params.get("date") || "";
   const time = params.get("time") || "";
   const slot = params.get("slot") || "";
   const price = params.get("price") || "";
+  const reg = params.get("reg") || "";
+  const lat = params.get("lat");
+  const lng = params.get("lng");
+  const addr = params.get("addr") || "";
 
-  const confirm = () => {
+  const confirm = async () => {
     const session = getAuth();
-    const customerEmail = session?.email || "guest";
-    addBooking({
-      customerEmail,
-      vehicle: vehicle === "bike" ? "bike" : "car",
-      service,
-      date,
-      time,
-      slot: slot || undefined,
-      price: price || undefined,
-    });
-    navigate(`/dashboard/customer`);
+    if (!session?.email) {
+      navigate("/login");
+      return;
+    }
+    if (!reg.trim()) {
+      toast({ title: "Vehicle number required", description: "Enter your registration number to proceed", variant: "destructive" });
+      const back = `/book/date?vehicle=${encodeURIComponent(vehicle)}&service=${encodeURIComponent(service)}&price=${encodeURIComponent(price)}`;
+      navigate(back);
+      return;
+    }
+    try {
+      await createBookingApi({
+        customerEmail: session.email,
+        vehicle: vehicle === "bike" ? "bike" : "car",
+        service,
+        location: lat && lng ? { formatted: addr || undefined, lat: parseFloat(lat), lng: parseFloat(lng) } : undefined,
+        date,
+        time,
+        registration: reg.trim(),
+      });
+      toast({ title: "Booking created", description: "Waiting for admin approval" });
+      navigate(`/dashboard/customer`);
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      toast({ title: "Failed to book", description: m, variant: "destructive" });
+    }
   };
 
   return (
@@ -52,6 +73,10 @@ const Checkout = () => {
             <div>
               <div className="text-sm text-muted-foreground">Time</div>
               <div className="font-medium">{time}</div>
+            </div>
+            <div className="sm:col-span-2">
+              <div className="text-sm text-muted-foreground">Pickup Location</div>
+              <div className="font-medium">{lat && lng ? (addr ? `${addr} — ${lat}, ${lng}` : `${lat}, ${lng}`) : "—"}</div>
             </div>
             <div className="sm:col-span-2">
               <div className="text-sm text-muted-foreground">Price</div>

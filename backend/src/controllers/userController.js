@@ -3,12 +3,15 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const { config } = require('../config/env');
+const { Vehicle } = require('../models/Vehicle');
 
 const pick = (obj, keys) => keys.reduce((acc, k) => { if (obj && Object.prototype.hasOwnProperty.call(obj, k)) acc[k] = obj[k]; return acc; }, {});
 
+const isDbConnected = () => (mongoose.connection?.readyState || 0) === 1;
+
 const getMe = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id).select('-password');
+    const user = await User.findById(req.user.id).select('-password -tokens');
     if (!user) return res.status(404).json({ message: 'User not found' });
     res.json({ user });
   } catch (err) {
@@ -16,6 +19,69 @@ const getMe = async (req, res, next) => {
   }
 };
 
+const setStaffOnline = async (req, res, next) => {
+  try {
+    const online = !!req.body.online;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (String(user.role).toLowerCase() !== 'staff') return res.status(403).json({ message: 'Only staff can toggle online' });
+    user.staffOnline = online;
+    await user.save();
+    res.json({ ok: true, online: user.staffOnline });
+  } catch (err) {
+    next(err);
+  }
+};
+const updateMeProfile = async (req, res, next) => {
+  try {
+    if (!isDbConnected()) return res.status(503).json({ message: 'Database not connected' });
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const body = req.body || {};
+    if (typeof body.name === 'string' && body.name.trim()) user.name = body.name.trim();
+    if (typeof body.phone === 'string') user.phone = body.phone.trim();
+    if (typeof body.shopName === 'string') user.shopName = body.shopName.trim();
+    if (typeof body.staffRole === 'string') user.staffRole = body.staffRole.trim();
+    if (typeof body.email === 'string' && body.email.trim() && body.email.trim().toLowerCase() !== String(user.email).toLowerCase()) {
+      const exists = await User.findOne({ email: body.email.trim().toLowerCase() });
+      if (exists) return res.status(409).json({ message: 'Email already in use' });
+      user.email = body.email.trim().toLowerCase();
+    }
+    if (Number.isFinite(Number(body.lat)) && Number.isFinite(Number(body.lng))) {
+      const lat = Number(body.lat); const lng = Number(body.lng);
+      user.location = { formatted: `${lat},${lng}`, lat, lng };
+    } else if (typeof body.location === 'string' && body.location.trim()) {
+      const raw = body.location.trim();
+      let resolved = { formatted: raw };
+      const parts = raw.split(',').map((s) => s.trim());
+      if (parts.length === 2) {
+        const lt = parseFloat(parts[0]); const lg = parseFloat(parts[1]);
+        if (Number.isFinite(lt) && Number.isFinite(lg)) resolved = { formatted: `${lt},${lg}`, lat: lt, lng: lg };
+      }
+      user.location = resolved;
+    }
+    await user.save();
+    res.json({ ok: true, user: { id: user._id, name: user.name, email: user.email, role: user.role, phone: user.phone, shopName: user.shopName, staffRole: user.staffRole, location: user.location } });
+  } catch (err) {
+    next(err);
+  }
+};
+const setMyLocation = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (String(user.role).toLowerCase() !== 'staff') return res.status(403).json({ message: 'Only staff can update location' });
+    const lat = Number(req.body.lat);
+    const lng = Number(req.body.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ message: 'lat and lng required' });
+    user.liveLocation = { lat, lng, updatedAt: new Date() };
+    user.staffOnline = true;
+    await user.save();
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+};
 // RapidAPI vehicle details lookup for car/bike by make/model/year or VIN
 const lookupVehicle = async (req, res, next) => {
   try {
@@ -26,7 +92,10 @@ const lookupVehicle = async (req, res, next) => {
     const vin = (req.query.vin || req.body.vin || '').toString();
     const reg = (req.query.reg || req.body.reg || '').toString();
 
-    if (!config.RAPIDAPI_KEY) return res.status(400).json({ message: 'RAPIDAPI_KEY missing' });
+    if (!config.RAPIDAPI_KEY) {
+      const vehicle = { type, make, model, year, vin, registration: reg };
+      return res.json({ vehicle, source: 'fallback' });
+    }
     if (!vin && !reg && (!type || (!make || !model))) return res.status(400).json({ message: 'Provide registration number or VIN, or type + make + model' });
 
     const headers = { 'x-rapidapi-key': config.RAPIDAPI_KEY };
@@ -220,8 +289,24 @@ const lookupVehicle = async (req, res, next) => {
 
 const listUsers = async (req, res, next) => {
   try {
+    if (!isDbConnected()) return res.status(503).json({ message: 'Database not connected' });
     const users = await User.find().select('-password');
-    res.json({ users });
+    res.json({
+      users: users.map((u) => ({
+        id: u._id,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        phone: u.phone,
+        shopName: u.shopName,
+        staffRole: u.staffRole,
+        location: u.location,
+        staffOnline: !!u.staffOnline,
+        liveLocation: u.liveLocation,
+        createdAt: u.createdAt,
+        tokenCount: Array.isArray(u.tokens) ? u.tokens.length : 0,
+      })),
+    });
   } catch (err) {
     next(err);
   }
@@ -232,6 +317,7 @@ const createUserByAdmin = async (req, res, next) => {
     const { role } = req.body;
     if (!role) return res.status(400).json({ message: 'Missing role' });
     if (!['staff', 'merchant'].includes(role)) return res.status(400).json({ message: 'Role must be staff or merchant' });
+    if (!isDbConnected()) return res.status(503).json({ message: 'Database not connected' });
 
     let payload = {};
     let email = '';
@@ -247,6 +333,17 @@ const createUserByAdmin = async (req, res, next) => {
       email = staffEmail;
       plainPassword = password;
       let resolvedLocation = { formatted: location };
+      // Support "lat,lng" direct input without geocoding
+      (function tryParseLatLng() {
+        const parts = String(location || '').split(',').map((s) => s.trim());
+        if (parts.length === 2) {
+          const lt = parseFloat(parts[0]);
+          const lg = parseFloat(parts[1]);
+          if (Number.isFinite(lt) && Number.isFinite(lg)) {
+            resolvedLocation = { formatted: `${lt},${lg}`, lat: lt, lng: lg };
+          }
+        }
+      })();
       try {
         if (config.RAPIDAPI_KEY && config.RAPIDAPI_HOST && typeof fetch === 'function') {
           const url = `https://${config.RAPIDAPI_HOST}/Geocode?address=${encodeURIComponent(location)}&language=en`;
@@ -287,6 +384,17 @@ Please log in and change your password.`;
       email = merchantEmail;
       plainPassword = password;
       let resolvedLocation = { formatted: location };
+      // Support "lat,lng" direct input without geocoding
+      (function tryParseLatLng() {
+        const parts = String(location || '').split(',').map((s) => s.trim());
+        if (parts.length === 2) {
+          const lt = parseFloat(parts[0]);
+          const lg = parseFloat(parts[1]);
+          if (Number.isFinite(lt) && Number.isFinite(lg)) {
+            resolvedLocation = { formatted: `${lt},${lg}`, lat: lt, lng: lg };
+          }
+        }
+      })();
       try {
         if (config.RAPIDAPI_KEY && config.RAPIDAPI_HOST && typeof fetch === 'function') {
           const url = `https://${config.RAPIDAPI_HOST}/Geocode?address=${encodeURIComponent(location)}&language=en`;
@@ -320,14 +428,6 @@ Password: ${plainPassword}
 Please log in and change your password.`;
     }
 
-    if ((mongoose.connection?.readyState || 0) === 0) {
-      const id = crypto.randomBytes(12).toString('hex');
-      return res.status(201).json({
-        user: { id, name: payload.name, email, role },
-        emailed: false,
-        simulated: true,
-      });
-    }
     const exists = await User.findOne({ email });
     if (exists) return res.status(409).json({ message: 'Email already in use' });
     const user = await User.create(payload);
@@ -366,9 +466,7 @@ const deleteUserByAdmin = async (req, res, next) => {
   try {
     const id = (req.params.id || '').toString();
     if (!id) return res.status(400).json({ message: 'Missing user id' });
-    if ((mongoose.connection?.readyState || 0) === 0) {
-      return res.json({ ok: true, simulated: true, id });
-    }
+    if (!isDbConnected()) return res.status(503).json({ message: 'Database not connected' });
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: 'User not found' });
     if (user.role === 'admin') return res.status(403).json({ message: 'Cannot delete admin user' });
@@ -379,4 +477,100 @@ const deleteUserByAdmin = async (req, res, next) => {
   }
 };
 
-module.exports = { getMe, listUsers, createUserByAdmin, deleteUserByAdmin, lookupVehicle };
+const updateUserLocationByAdmin = async (req, res, next) => {
+  try {
+    const id = (req.params.id || '').toString();
+    if (!id) return res.status(400).json({ message: 'Missing user id' });
+    if (!isDbConnected()) return res.status(503).json({ message: 'Database not connected' });
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (user.role === 'admin') return res.status(403).json({ message: 'Cannot modify admin user' });
+    let resolvedLocation = null;
+    const hasLatLng = Number.isFinite(Number(req.body.lat)) && Number.isFinite(Number(req.body.lng));
+    if (hasLatLng) {
+      const lat = Number(req.body.lat);
+      const lng = Number(req.body.lng);
+      resolvedLocation = { formatted: `${lat},${lng}`, lat, lng };
+    } else if (typeof req.body.location === 'string' && req.body.location.trim()) {
+      const raw = req.body.location.trim();
+      resolvedLocation = { formatted: raw };
+      const parts = raw.split(',').map((s) => s.trim());
+      if (parts.length === 2) {
+        const lt = parseFloat(parts[0]); const lg = parseFloat(parts[1]);
+        if (Number.isFinite(lt) && Number.isFinite(lg)) resolvedLocation = { formatted: `${lt},${lg}`, lat: lt, lng: lg };
+      } else if (config.RAPIDAPI_KEY && config.RAPIDAPI_HOST && typeof fetch === 'function') {
+        try {
+          const url = `https://${config.RAPIDAPI_HOST}/Geocode?address=${encodeURIComponent(raw)}&language=en`;
+          const resp = await fetch(url, { headers: { 'x-rapidapi-key': config.RAPIDAPI_KEY, 'x-rapidapi-host': config.RAPIDAPI_HOST } });
+          const data = await resp.json().catch(() => ({}));
+          const first = data?.results?.[0];
+          if (first) resolvedLocation = { formatted: first.address || raw, lat: first.location?.lat, lng: first.location?.lng };
+        } catch {}
+      }
+    }
+    if (!resolvedLocation) return res.status(400).json({ message: 'location or lat,lng required' });
+    user.location = resolvedLocation;
+    await user.save();
+    res.json({ ok: true, user: { id: user._id, email: user.email } });
+  } catch (err) {
+    next(err);
+  }
+};
+const createVehicle = async (req, res, next) => {
+  try {
+    const ownerEmail = (req.body.ownerEmail || req.user?.email || '').toString().toLowerCase();
+    const type = (req.body.type || '').toString().toLowerCase();
+    const plate = (req.body.plate || req.body.registration || req.body.reg || '').toString();
+    if (!ownerEmail || !type || !plate) return res.status(400).json({ message: 'ownerEmail, type, plate required' });
+    const make = (req.body.make || '').toString();
+    const model = (req.body.model || '').toString();
+    const year = (req.body.year || '').toString();
+    const engine = (req.body.engine || '').toString();
+    const displacement = (req.body.displacement || '').toString();
+    const power_hp = (req.body.power_hp || '').toString();
+    const payload = {
+      ownerEmail,
+      type: type === 'bike' ? 'bike' : 'car',
+      make: make || undefined,
+      model: model || undefined,
+      year: year || undefined,
+      engine: engine || undefined,
+      displacement: displacement || undefined,
+      power_hp: power_hp || undefined,
+      vin: (req.body.vin || '').toString(),
+      plate,
+    };
+    const doc = await Vehicle.create(payload);
+    res.status(201).json({ vehicle: { id: doc._id } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const listVehicles = async (req, res, next) => {
+  try {
+    const email = (req.query.email || req.user?.email || '').toString().toLowerCase();
+    if (!email) return res.status(400).json({ message: 'email required' });
+    const docs = await Vehicle.find({ ownerEmail: email }).sort({ createdAt: -1 });
+    res.json({
+      vehicles: docs.map((d) => ({
+        id: d._id,
+        ownerEmail: d.ownerEmail,
+        type: d.type,
+        make: d.make,
+        model: d.model,
+        year: d.year,
+        engine: d.engine,
+        displacement: d.displacement,
+        power_hp: d.power_hp,
+        vin: d.vin,
+        plate: d.plate,
+        createdAt: d.createdAt,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { getMe, listUsers, createUserByAdmin, deleteUserByAdmin, updateUserLocationByAdmin, lookupVehicle, createVehicle, listVehicles, setStaffOnline, setMyLocation, updateMeProfile };

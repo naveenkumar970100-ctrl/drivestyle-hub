@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 
 const ROLES = ['admin', 'staff', 'merchant', 'customer'];
 
@@ -16,6 +16,18 @@ const userSchema = new mongoose.Schema(
       formatted: { type: String },
       lat: { type: Number },
       lng: { type: Number },
+    },
+    tokens: [
+      {
+        token: { type: String, required: true },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
+    staffOnline: { type: Boolean, default: false },
+    liveLocation: {
+      lat: { type: Number },
+      lng: { type: Number },
+      updatedAt: { type: Date },
     },
   },
   { timestamps: true }

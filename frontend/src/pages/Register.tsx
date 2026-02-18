@@ -34,8 +34,9 @@ const Register = () => {
       addRegistration({ name: form.name, email: form.email.trim(), role: regRole });
       toast({ title: "Registration successful!", description: "Welcome to MotoHub!" });
       navigate("/login");
-    } catch (err: any) {
-      toast({ title: "Error", description: String(err.message || err), variant: "destructive" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast({ title: "Error", description: message, variant: "destructive" });
     }
   };
 

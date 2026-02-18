@@ -7,6 +7,8 @@ const nodemailer = require('nodemailer');
 const { connectDB } = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
+const bookingRoutes = require('./routes/bookingRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 const { errorHandler } = require('./middleware/errorHandler');
 const { createUserByAdmin } = require('./controllers/userController');
 
@@ -14,7 +16,8 @@ const app = express();
 
 const allowedOrigin = config.CLIENT_URL || 'http://localhost:8080';
 app.use(cors({ origin: allowedOrigin, credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 app.use(morgan('dev'));
 app.use((req, res, next) => {
   console.log('REQ', req.method, req.path);
@@ -46,8 +49,10 @@ app.get('/api/health/smtp', async (req, res) => {
   }
 });
 
+app.use('/api/bookings', bookingRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 if ((process.env.NODE_ENV || 'development') !== 'production') {
   app.post('/api/admin/create', createUserByAdmin);
   app.all('/api/users/admin/create', (req, res, next) => createUserByAdmin(req, res, next));

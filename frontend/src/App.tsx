@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import RequireAuth from "./components/RequireAuth";
 import Index from "./pages/Index";
 import About from "./pages/About";
 import Services from "./pages/Services";
@@ -46,10 +47,10 @@ const App = () => (
             <Route path="/contact" element={<Contact />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/dashboard/admin" element={<AdminDashboard />} />
-            <Route path="/dashboard/staff" element={<StaffDashboard />} />
-            <Route path="/dashboard/merchant" element={<MerchantDashboard />} />
-            <Route path="/dashboard/customer" element={<CustomerDashboard />} />
+            <Route path="/dashboard/admin" element={<RequireAuth role="admin"><AdminDashboard /></RequireAuth>} />
+            <Route path="/dashboard/staff" element={<RequireAuth role="staff"><StaffDashboard /></RequireAuth>} />
+            <Route path="/dashboard/merchant" element={<RequireAuth role="merchant"><MerchantDashboard /></RequireAuth>} />
+            <Route path="/dashboard/customer" element={<RequireAuth role="customer"><CustomerDashboard /></RequireAuth>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

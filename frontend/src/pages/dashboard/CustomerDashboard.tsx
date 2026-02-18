@@ -1,33 +1,119 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { motion } from "framer-motion";
-import { Car, ShoppingBag, Clock, CheckCircle } from "lucide-react";
+import { Car, ShoppingBag, Clock, CheckCircle, Pencil, Image as ImageIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { useEffect, useState } from "react";
-import { getAuth, listCustomerBookings, listCustomerVehicles, addCustomerVehicle, fetchVehicleDetails, type Booking, type CustomerVehicle, type VehicleType } from "@/lib/utils";
+import { useEffect, useState, useMemo } from "react";
+import { getAuth, setAuth, listCustomerVehiclesFromApi, createCustomerVehicleApi, fetchVehicleDetails, listApiBookings, createBookingApi, listInvoices, downloadInvoice, listUsersFromApi, updateMyProfileApi, getCurrentUserFromApi, type CustomerVehicle, type VehicleType, type ApiBooking, type Invoice, type ApiUser } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "react-router-dom";
+import { MapContainer, TileLayer, Marker, useMapEvents, type MapContainerProps } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
 const fadeUp = { initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.4 } };
 
 const CustomerDashboard = () => {
   const { toast } = useToast();
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const { search } = useLocation();
+  const [apiBookings, setApiBookings] = useState<ApiBooking[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [users, setUsers] = useState<ApiUser[]>([]);
   const [vehicles, setVehicles] = useState<CustomerVehicle[]>([]);
+  const [bookingForm, setBookingForm] = useState<{ vehicle: VehicleType; service: string; registration?: string; location?: string; date?: string; time?: string }>({ vehicle: "car", service: "" });
+  const [custPos, setCustPos] = useState<[number, number] | null>(null);
+  const iconDefaultProto = L.Icon.Default.prototype as unknown as { _getIconUrl?: () => string };
+  delete iconDefaultProto._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: new URL("leaflet/dist/images/marker-icon-2x.png", import.meta.url).toString(),
+    iconUrl: new URL("leaflet/dist/images/marker-icon.png", import.meta.url).toString(),
+    shadowUrl: new URL("leaflet/dist/images/marker-shadow.png", import.meta.url).toString(),
+  });
+  const mapProps: MapContainerProps = useMemo(
+    () => ({
+      center: (custPos ?? [20.5937, 78.9629]) as [number, number],
+      zoom: custPos ? 13 : 4,
+      style: { height: 240 },
+      scrollWheelZoom: true,
+    }),
+    [custPos]
+  );
   const [vehicleForm, setVehicleForm] = useState<{ type: VehicleType; make: string; model: string; year: string; engine?: string; displacement?: string; power_hp?: string; reg?: string }>({ type: "car", make: "", model: "", year: "" });
+  const tab = (() => {
+    const p = new URLSearchParams(search);
+    const t = p.get("tab");
+    const allowed = new Set(["my-profile", "dashboard", "my-bookings", "invoices", "my-vehicles", "settings"]);
+    return allowed.has(String(t)) ? String(t) : "dashboard";
+  })();
+  const session = getAuth();
+  const [profileName, setProfileName] = useState<string>(session?.name || "edu");
+  const [editOpen, setEditOpen] = useState(false);
+  const [tempName, setTempName] = useState<string>(profileName);
   useEffect(() => {
-    const session = getAuth();
-    if (session?.email) {
-      setBookings(listCustomerBookings(session.email));
-      setVehicles(listCustomerVehicles(session.email));
-    }
+    (async () => {
+      const session = getAuth();
+      let email = session?.email || "";
+      try {
+        if (!email) {
+          const me = await getCurrentUserFromApi();
+          if (me?.email) {
+            email = me.email;
+            if (session) setAuth({ ...session, email: me.email });
+          }
+        }
+      } catch { /* ignore */ }
+      try {
+        const list = await listApiBookings(session?.role === "Admin" || !email ? undefined : { email });
+        setApiBookings(list);
+      } catch {
+        setApiBookings([]);
+      }
+      try {
+        if (email) {
+          const v = await listCustomerVehiclesFromApi(email);
+          setVehicles(v);
+        } else {
+          setVehicles([]);
+        }
+      } catch {
+        setVehicles([]);
+      }
+      try {
+        setInvoices(listInvoices());
+      } catch {
+        setInvoices([]);
+      }
+      try {
+        const u = await listUsersFromApi();
+        setUsers(u);
+      } catch { setUsers([]); }
+    })();
+    const id = setInterval(async () => {
+      const session = getAuth();
+      const email = session?.email || "";
+      try {
+        const list = await listApiBookings(session?.role === "Admin" || !email ? undefined : { email });
+        setApiBookings(list);
+      } catch (_e) {
+        void 0;
+      }
+      try {
+        setInvoices(listInvoices());
+      } catch { /* ignore */ }
+      try {
+        const u = await listUsersFromApi();
+        setUsers(u);
+      } catch { /* ignore */ }
+    }, 3000);
+    return () => clearInterval(id);
   }, []);
-  const total = bookings.length;
-  const upcoming = bookings.filter((b) => b.status === "Upcoming").length;
-  const completed = bookings.filter((b) => b.status === "Completed").length;
+  const total = apiBookings.length;
+  const upcoming = apiBookings.filter((b) => String(b.status).toLowerCase() === "approved").length;
+  const completed = apiBookings.filter((b) => String(b.status).toLowerCase() === "completed").length;
   const stats = [
     { label: "My Vehicles", value: String(vehicles.length), icon: Car },
     { label: "Total Bookings", value: String(total), icon: ShoppingBag },
@@ -37,154 +123,657 @@ const CustomerDashboard = () => {
   return (
     <DashboardLayout role="customer">
       <div className="space-y-6">
-        <motion.div {...fadeUp} className="flex items-center justify-between">
-          <h1 className="font-heading text-3xl font-bold">My Dashboard</h1>
-          <Link to="/services">
-            <Button className="gradient-accent border-0 text-accent-foreground">Book Service</Button>
-          </Link>
-        </motion.div>
-
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {stats.map((s, i) => (
-            <motion.div key={s.label} {...fadeUp} transition={{ delay: i * 0.1 }} className="rounded-xl border bg-card p-5 shadow-card">
-              <s.icon className="h-8 w-8 text-accent" />
-              <div className="mt-3 font-heading text-2xl font-bold">{s.value}</div>
-              <div className="text-sm text-muted-foreground">{s.label}</div>
-            </motion.div>
-          ))}
-        </div>
-
-        <motion.div {...fadeUp} transition={{ delay: 0.25 }} className="rounded-xl border bg-card p-6 shadow-card">
-          <div className="flex items-center justify-between">
-            <h2 className="font-heading text-xl font-bold">My Vehicles</h2>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button size="sm" className="gradient-accent border-0 text-accent-foreground">Add Vehicle</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add Vehicle</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-3">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">Vehicle Registration Number</label>
-                    <Input value={vehicleForm.reg || ""} onChange={(e) => setVehicleForm({ ...vehicleForm, reg: e.target.value })} placeholder="e.g. AP09AB1234" />
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <div className="text-sm text-muted-foreground">Details</div>
-                    <div className="mt-2 text-sm">
-                      <div>Type: <span className="font-medium">{vehicleForm.type}</span></div>
-                      <div>Make: <span className="font-medium">{vehicleForm.make || "-"}</span></div>
-                      <div>Model: <span className="font-medium">{vehicleForm.model || "-"}</span></div>
-                      <div>Year: <span className="font-medium">{vehicleForm.year || "-"}</span></div>
-                      <div>Engine: <span className="font-medium">{vehicleForm.engine || "-"}</span></div>
-                      <div>Displacement: <span className="font-medium">{vehicleForm.displacement || "-"}</span></div>
-                      <div>Power (HP): <span className="font-medium">{vehicleForm.power_hp || "-"}</span></div>
+        {tab === "dashboard" && (
+          <motion.div {...fadeUp} className="flex items-center justify-between">
+            <h1 className="font-heading text-3xl font-bold">My Dashboard</h1>
+            <Link to="/services">
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button className="gradient-accent border-0 text-accent-foreground">Book Service</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Book a Service</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">Vehicle Type</label>
+                      <Select value={bookingForm.vehicle} onValueChange={(v) => setBookingForm({ ...bookingForm, vehicle: v as VehicleType })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="car">Car</SelectItem>
+                          <SelectItem value="bike">Bike</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                  </div>
-                  <div className="flex gap-2">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">Select Vehicle</label>
+                      {vehicles.length === 0 ? (
+                        <div className="rounded-lg border p-3 text-sm text-destructive">No vehicles saved. Please add a vehicle first.</div>
+                      ) : (
+                        <Select value={bookingForm.registration || ""} onValueChange={(v) => setBookingForm({ ...bookingForm, registration: v })}>
+                          <SelectTrigger><SelectValue placeholder="Select vehicle (plate)" /></SelectTrigger>
+                          <SelectContent>
+                            {vehicles.map((v) => (
+                              <SelectItem key={v.id} value={v.plate || v.vin || ""}>{v.plate || v.vin || `${v.make} ${v.model}`}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">Pickup Location</label>
+                      <div className="space-y-2">
+                        <Input value={bookingForm.location || ""} onChange={(e) => setBookingForm({ ...bookingForm, location: e.target.value })} placeholder="Address (optional)" />
+                        <div className="rounded-lg border">
+                          <MapContainer {...mapProps}>
+                            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                            <ClickPicker onPick={(latlng) => setCustPos([latlng.lat, latlng.lng])} />
+                            {custPos && <Marker position={custPos} />}
+                          </MapContainer>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => {
+                            if ("geolocation" in navigator) {
+                              navigator.geolocation.getCurrentPosition((pos) => setCustPos([pos.coords.latitude, pos.coords.longitude]));
+                            }
+                          }}>Use My Location</Button>
+                          {custPos && <span className="text-xs text-muted-foreground">Selected: {custPos[0].toFixed(5)}, {custPos[1].toFixed(5)}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Date</label>
+                        <Input value={bookingForm.date || ""} onChange={(e) => setBookingForm({ ...bookingForm, date: e.target.value })} placeholder="YYYY-MM-DD" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Time</label>
+                        <Input value={bookingForm.time || ""} onChange={(e) => setBookingForm({ ...bookingForm, time: e.target.value })} placeholder="HH:MM" />
+                      </div>
+                    </div>
                     <Button
-                      variant="outline"
                       onClick={async () => {
-                        try {
-                          if (!vehicleForm.reg) {
-                            toast({ title: "Registration required", description: "Enter your vehicle registration number", variant: "destructive" });
-                            return;
-                          }
-                          const details = await fetchVehicleDetails({ type: vehicleForm.type, reg: vehicleForm.reg });
-                          setVehicleForm({
-                            ...vehicleForm,
-                            type: (details as any)?.type === "bike" ? "bike" : ((details as any)?.type === "car" ? "car" : vehicleForm.type),
-                            engine: details.engine || vehicleForm.engine,
-                            displacement: details.displacement || vehicleForm.displacement,
-                            power_hp: details.power_hp || vehicleForm.power_hp,
-                            make: (details as any)?.make || vehicleForm.make,
-                            model: (details as any)?.model || vehicleForm.model,
-                            year: (details as any)?.year || vehicleForm.year,
-                          });
-                          toast({ title: "Details fetched", description: "Vehicle specs updated" });
-                        } catch (err) {
-                          const m = err instanceof Error ? err.message : String(err);
-                          toast({ title: "Failed to fetch", description: m, variant: "destructive" });
-                        }
-                      }}
-                    >
-                      Fetch Details
-                    </Button>
-                    <Button
-                      onClick={() => {
                         const session = getAuth();
                         if (!session?.email) return;
-                        if (!vehicleForm.reg) {
-                          toast({ title: "Registration required", description: "Enter your vehicle registration number", variant: "destructive" });
+                        if (vehicles.length === 0) {
+                          toast({ title: "Add vehicle first", description: "Save a vehicle to your garage", variant: "destructive" });
                           return;
                         }
-                        if (!vehicleForm.make || !vehicleForm.model) {
-                          toast({ title: "Fetch required", description: "Click Fetch Details first", variant: "destructive" });
+                        if (!bookingForm.registration?.trim()) {
+                          toast({ title: "Vehicle number required", description: "Enter your registration number", variant: "destructive" });
                           return;
                         }
-                        addCustomerVehicle(session.email, {
-                          type: vehicleForm.type,
-                          make: vehicleForm.make,
-                          model: vehicleForm.model,
-                          year: vehicleForm.year || undefined,
-                          engine: vehicleForm.engine || undefined,
-                          displacement: vehicleForm.displacement || undefined,
-                          power_hp: vehicleForm.power_hp || undefined,
-                          vin: vehicleForm.reg || undefined,
-                        });
-                        setVehicles(listCustomerVehicles(session.email));
-                        setVehicleForm({ type: "car", make: "", model: "", year: "" });
-                        toast({ title: "Vehicle added", description: "Saved to your garage" });
+                        if (!bookingForm.date) {
+                          toast({ title: "Date required", description: "Select a service date", variant: "destructive" });
+                          return;
+                        }
+                        try {
+                          const serviceDefault = bookingForm.vehicle === "bike" ? "Periodic Service" : "General Service";
+                          await createBookingApi({
+                            customerEmail: session.email,
+                            vehicle: bookingForm.vehicle,
+                            service: serviceDefault,
+                            registration: bookingForm.registration?.trim(),
+                            location: custPos ? { formatted: bookingForm.location, lat: custPos[0], lng: custPos[1] } : bookingForm.location,
+                            date: bookingForm.date,
+                            time: bookingForm.time,
+                          });
+                          const list = await listApiBookings({ email: session.email });
+                          setApiBookings(list);
+                          setBookingForm({ vehicle: "car", service: "" });
+                          setCustPos(null);
+                          toast({ title: "Booking created", description: "Waiting for admin approval" });
+                        } catch (err) {
+                          const m = err instanceof Error ? err.message : String(err);
+                          toast({ title: "Failed to book", description: m, variant: "destructive" });
+                        }
                       }}
-                      className="gradient-accent border-0 text-accent-foreground"
+                      className="w-full gradient-accent border-0 text-accent-foreground"
                     >
                       Save
                     </Button>
                   </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {vehicles.length === 0 && (
-              <div className="rounded-lg border p-4 text-sm text-muted-foreground">No vehicles yet</div>
-            )}
-            {vehicles.map((v) => (
-              <div key={v.id} className="flex items-center justify-between rounded-lg border p-4">
-                <div>
-                  <div className="font-medium">{v.make} {v.model}</div>
-                  <div className="text-sm text-muted-foreground">{v.type === "bike" ? "Bike" : "Car"} {v.year && `• ${v.year}`}</div>
-                </div>
-                <Badge variant="secondary">{v.engine || v.displacement || "Spec"}</Badge>
+                </DialogContent>
+              </Dialog>
+            </Link>
+          </motion.div>
+        )}
+        {tab === "my-profile" && (
+          <motion.div {...fadeUp} transition={{ delay: 0.15 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <h2 className="font-heading text-xl font-bold mb-4">My Profile</h2>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="rounded-lg border p-4">
+                <div className="text-xs text-muted-foreground">Role</div>
+                <div className="text-lg font-semibold">Customer</div>
               </div>
-            ))}
-          </div>
-        </motion.div>
+              <div className="rounded-lg border p-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-muted-foreground">Name</div>
+                  <Dialog open={editOpen} onOpenChange={setEditOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label="Edit name" onClick={() => setTempName(profileName)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-sm">
+                      <DialogHeader>
+                        <DialogTitle>Edit Name</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-3">
+                        <Input value={tempName} onChange={(e) => setTempName(e.target.value)} placeholder="Enter new name" />
+                        <div className="flex gap-2 justify-end">
+                          <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+                          <Button
+                            onClick={async () => {
+                              try {
+                                const nextName = (tempName || "").trim() || "edu";
+                                const resp = await updateMyProfileApi({ name: nextName });
+                                if (resp.user) {
+                                  const current = getAuth();
+                                  if (current) {
+                                    setAuth({ ...current, name: resp.user.name, email: resp.user.email || current.email, role: current.role, token: current.token });
+                                  }
+                                }
+                                setProfileName(nextName);
+                                // refresh visible user lists (e.g., for merchants/staff who display names)
+                                try {
+                                  const u = await listUsersFromApi();
+                                  setUsers(u);
+                                } catch (e) { void e; }
+                                setEditOpen(false);
+                                toast({ title: "Profile updated", description: nextName });
+                              } catch (err) {
+                                const msg = err instanceof Error ? err.message : String(err);
+                                toast({ title: "Update failed", description: msg, variant: "destructive" });
+                              }
+                            }}
+                          >
+                            Save
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+                <div className="mt-2 text-lg font-semibold">{profileName}</div>
+              </div>
+              <div className="rounded-lg border p-4">
+                <div className="text-xs text-muted-foreground">Email</div>
+                <div className="text-lg font-semibold">{session?.email || "edu@gmail.com"}</div>
+              </div>
+            </div>
+          </motion.div>
+        )}
 
-        <motion.div {...fadeUp} transition={{ delay: 0.4 }} className="rounded-xl border bg-card p-6 shadow-card">
-          <h2 className="font-heading text-xl font-bold">My Bookings</h2>
-          <div className="mt-4 space-y-3">
-            {bookings.length === 0 && (
-              <div className="rounded-lg border p-4 text-sm text-muted-foreground">No bookings yet</div>
-            )}
-            {bookings.map((b) => (
-              <div key={b.id} className="flex flex-col gap-2 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="font-medium">{b.service}</div>
-                  <div className="text-sm text-muted-foreground">{b.vehicle === "bike" ? "Bike" : "Car"}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">{b.date} {b.time && `• ${b.time}`}</span>
-                  <Badge variant={b.status === "Upcoming" ? "default" : "secondary"}>{b.status}</Badge>
-                </div>
-              </div>
+        {tab === "dashboard" && (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {stats.map((s, i) => (
+              <motion.div key={s.label} {...fadeUp} transition={{ delay: i * 0.1 }} className="rounded-xl border bg-card p-5 shadow-card">
+                <s.icon className="h-8 w-8 text-accent" />
+                <div className="mt-3 font-heading text-2xl font-bold">{s.value}</div>
+                <div className="text-sm text-muted-foreground">{s.label}</div>
+              </motion.div>
             ))}
           </div>
-        </motion.div>
+        )}
+
+        {tab === "my-vehicles" && (
+          <motion.div {...fadeUp} transition={{ delay: 0.25 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <div className="flex items-center justify-between">
+              <h2 className="font-heading text-xl font-bold">My Vehicles</h2>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button size="sm" className="gradient-accent border-0 text-accent-foreground">Add Vehicle</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Add Vehicle</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">Vehicle Registration Number</label>
+                      <Input value={vehicleForm.reg || ""} onChange={(e) => setVehicleForm({ ...vehicleForm, reg: e.target.value })} placeholder="e.g. AP09AB1234" />
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Type</label>
+                        <Select value={vehicleForm.type} onValueChange={(v) => setVehicleForm({ ...vehicleForm, type: v as VehicleType })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="car">Car</SelectItem>
+                            <SelectItem value="bike">Bike</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Make</label>
+                        <Input value={vehicleForm.make} onChange={(e) => setVehicleForm({ ...vehicleForm, make: e.target.value })} placeholder="e.g. Maruti" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Model</label>
+                        <Input value={vehicleForm.model} onChange={(e) => setVehicleForm({ ...vehicleForm, model: e.target.value })} placeholder="e.g. Swift" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Year</label>
+                        <Input value={vehicleForm.year} onChange={(e) => setVehicleForm({ ...vehicleForm, year: e.target.value })} placeholder="e.g. 2021" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Engine</label>
+                        <Input value={vehicleForm.engine || ""} onChange={(e) => setVehicleForm({ ...vehicleForm, engine: e.target.value })} placeholder="e.g. 1.2L Petrol" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Displacement</label>
+                        <Input value={vehicleForm.displacement || ""} onChange={(e) => setVehicleForm({ ...vehicleForm, displacement: e.target.value })} placeholder="e.g. 1197 cc" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Power (HP)</label>
+                        <Input value={vehicleForm.power_hp || ""} onChange={(e) => setVehicleForm({ ...vehicleForm, power_hp: e.target.value })} placeholder="e.g. 89" />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={async () => {
+                          try {
+                            if (!vehicleForm.reg) {
+                              toast({ title: "Registration required", description: "Enter your vehicle registration number", variant: "destructive" });
+                              return;
+                            }
+                            const details = (await fetchVehicleDetails({ type: vehicleForm.type, reg: vehicleForm.reg })) as { type?: string; make?: string; model?: string; year?: string; engine?: string; displacement?: string; power_hp?: string };
+                            setVehicleForm({
+                              ...vehicleForm,
+                              type: details?.type === "bike" ? "bike" : (details?.type === "car" ? "car" : vehicleForm.type),
+                              engine: details?.engine || vehicleForm.engine,
+                              displacement: details?.displacement || vehicleForm.displacement,
+                              power_hp: details?.power_hp || vehicleForm.power_hp,
+                              make: details?.make || vehicleForm.make,
+                              model: details?.model || vehicleForm.model,
+                              year: details?.year || vehicleForm.year,
+                            });
+                            toast({ title: "Details fetched", description: "Vehicle specs updated" });
+                          } catch (err) {
+                            const m = err instanceof Error ? err.message : String(err);
+                            toast({ title: "Failed to fetch", description: m, variant: "destructive" });
+                          }
+                        }}
+                      >
+                        Fetch Details
+                      </Button>
+                      <Button
+                        onClick={async () => {
+                          const session = getAuth();
+                          if (!session?.email) return;
+                          if (!vehicleForm.reg) {
+                            toast({ title: "Registration required", description: "Enter your vehicle registration number", variant: "destructive" });
+                            return;
+                          }
+                          let make = vehicleForm.make;
+                          let model = vehicleForm.model;
+                          let year = vehicleForm.year;
+                          let engine = vehicleForm.engine;
+                          let displacement = vehicleForm.displacement;
+                          let power_hp = vehicleForm.power_hp;
+                          try {
+                            if (!make || !model || !year || !engine || !displacement || !power_hp) {
+                              const details = (await fetchVehicleDetails({
+                                type: vehicleForm.type,
+                                make,
+                                model,
+                                year,
+                                reg: vehicleForm.reg,
+                              })) as { make?: string; model?: string; year?: string; engine?: string; displacement?: string; power_hp?: string };
+                              make = details.make || make || "";
+                              model = details.model || model || "";
+                              year = details.year || year || "";
+                              engine = details.engine || engine || "Unknown";
+                              displacement = details.displacement || displacement || "Unknown";
+                              power_hp = details.power_hp || power_hp || "Unknown";
+                            }
+                            await createCustomerVehicleApi({
+                              ownerEmail: session.email,
+                              type: vehicleForm.type,
+                              make,
+                              model,
+                              year,
+                              engine,
+                              displacement,
+                              power_hp,
+                              vin: vehicleForm.reg || undefined,
+                              plate: vehicleForm.reg || "",
+                            });
+                            const v = await listCustomerVehiclesFromApi(session.email);
+                            setVehicles(v);
+                            setVehicleForm({ type: "car", make: "", model: "", year: "" });
+                            toast({ title: "Vehicle added", description: "Saved to your garage" });
+                          } catch (err) {
+                            const m = err instanceof Error ? err.message : String(err);
+                            toast({ title: "Failed to save vehicle", description: m, variant: "destructive" });
+                          }
+                        }}
+                        className="gradient-accent border-0 text-accent-foreground"
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {vehicles.length === 0 && (
+                <div className="rounded-lg border p-4 text-sm text-muted-foreground">No vehicles yet</div>
+              )}
+              {vehicles.map((v) => (
+                <div key={v.id} className="flex items-center justify-between rounded-lg border p-4">
+                  <div>
+                    <div className="font-medium">{v.make} {v.model}</div>
+                    <div className="text-sm text-muted-foreground">{v.type === "bike" ? "Bike" : "Car"} {v.year && `• ${v.year}`}</div>
+                  </div>
+                  <Badge variant="secondary">{v.engine || v.displacement || "Spec"}</Badge>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {tab === "my-bookings" && (
+          <motion.div {...fadeUp} transition={{ delay: 0.4 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <h2 className="font-heading text-xl font-bold">My Bookings</h2>
+            <div className="mt-4 space-y-3">
+              {apiBookings.length === 0 && (
+                <div className="rounded-lg border p-4 text-sm text-muted-foreground">No bookings yet</div>
+              )}
+              {apiBookings.map((b) => (
+                <div key={b.id} className="flex flex-col gap-2 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="font-medium">{b.service}</div>
+                    <div className="text-sm text-muted-foreground">{b.vehicle === "bike" ? "Bike" : "Car"}</div>
+                    {b.lastUpdatedMessage && (
+                      <div className="text-xs text-muted-foreground">
+                        {(b.lastUpdatedByRole ? b.lastUpdatedByRole.charAt(0).toUpperCase() + b.lastUpdatedByRole.slice(1) : "Update")} — {b.lastUpdatedMessage}
+                      </div>
+                    )}
+                    {b.dropAt && (
+                      <div className="text-xs text-muted-foreground">Dropped: {new Date(b.dropAt).toLocaleString()}</div>
+                    )}
+                    {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
+                      <div className="mt-2">
+                        <div className="text-xs text-muted-foreground mb-1">Before Service</div>
+                        <div className="flex flex-wrap gap-2">
+                          {b.photosBefore.slice(0, 4).map((src, i) => (
+                            <Dialog key={`before-${i}`}>
+                              <DialogTrigger asChild>
+                                <img src={src} alt="Before" className="h-14 w-14 rounded object-cover border cursor-zoom-in" />
+                              </DialogTrigger>
+                              <DialogContent className="max-w-3xl p-0">
+                                <img src={src} alt="Before Full" className="w-full h-auto rounded" />
+                              </DialogContent>
+                            </Dialog>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {Array.isArray(b.photosAfter) && b.photosAfter.length > 0 && (
+                      <div className="mt-2">
+                        <div className="text-xs text-muted-foreground mb-1">After Service</div>
+                        <div className="flex flex-wrap gap-2">
+                          {b.photosAfter.slice(0, 4).map((src, i) => (
+                            <Dialog key={`after-${i}`}>
+                              <DialogTrigger asChild>
+                                <img src={src} alt="After" className="h-14 w-14 rounded object-cover border cursor-zoom-in" />
+                              </DialogTrigger>
+                              <DialogContent className="max-w-3xl p-0">
+                                <img src={src} alt="After Full" className="w-full h-auto rounded" />
+                              </DialogContent>
+                            </Dialog>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {Array.isArray(b.photosReturn) && b.photosReturn.length > 0 && (
+                      <div className="mt-2">
+                        <div className="text-xs text-muted-foreground mb-1">Return</div>
+                        <div className="flex flex-wrap gap-2">
+                          {b.photosReturn.slice(0, 4).map((src, i) => (
+                            <Dialog key={`ret-${i}`}>
+                              <DialogTrigger asChild>
+                                <img src={src} alt="Return" className="h-14 w-14 rounded object-cover border cursor-zoom-in" />
+                              </DialogTrigger>
+                              <DialogContent className="max-w-3xl p-0">
+                                <img src={src} alt="Return Full" className="w-full h-auto rounded" />
+                              </DialogContent>
+                            </Dialog>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {typeof b.estimateTotal === "number" && (
+                      <div className="text-xs text-muted-foreground">
+                        Estimate: ₹{(b.estimateLabour || 0)} + ₹{(b.estimateParts || 0)} + ₹{(b.estimateAdditional || 0)} = ₹{b.estimateTotal}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">{b.date || "-"} {b.time && `• ${b.time}`}</span>
+                    <Badge variant={String(b.status).toLowerCase() === "approved" ? "secondary" : String(b.status).toLowerCase() === "pending" ? "default" : String(b.status).toLowerCase() === "rejected" ? "destructive" : "outline"}>{b.status}</Badge>
+                  </div>
+              {(() => {
+                const staff = users.find((u) => u.id && String(u.id) === String(b.staffId));
+                const live = staff?.liveLocation;
+                const hasLive = !!(live && live.lat !== undefined && live.lng !== undefined);
+                const statusUpper = String(b.status).toUpperCase();
+                if (!hasLive) return null;
+                if (statusUpper === "COMPLETED" || statusUpper === "DELIVERED") return null;
+                return (
+                  <div className="flex items-center justify-between pt-2">
+                    <div className="text-xs text-muted-foreground">
+                      Staff: {staff?.name || staff?.email || "Assigned"} {staff?.staffOnline ? "• Online" : "• Offline"}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button size="sm" variant="outline">Track Location</Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-3xl">
+                          <DialogHeader>
+                            <DialogTitle>Staff Live Location</DialogTitle>
+                          </DialogHeader>
+                          <div className="rounded-lg overflow-hidden">
+                            <MapContainer center={[Number(live!.lat), Number(live!.lng)] as [number, number]} zoom={14} style={{ height: 380 }} scrollWheelZoom>
+                              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                              <Marker position={[Number(live!.lat), Number(live!.lng)] as [number, number]} />
+                              {b.location?.lat !== undefined && b.location?.lng !== undefined && (
+                                <Marker position={[Number(b.location.lat), Number(b.location.lng)] as [number, number]} />
+                              )}
+                            </MapContainer>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {`Updated: ${live?.updatedAt || "-"}`}
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button size="icon" variant="outline" aria-label="View Images">
+                            <ImageIcon className="h-4 w-4" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-4xl">
+                          <DialogHeader>
+                            <DialogTitle>Service Images</DialogTitle>
+                          </DialogHeader>
+                          {(() => {
+                            const hasMedia =
+                              (Array.isArray(b.photosBefore) && b.photosBefore.length > 0) ||
+                              (Array.isArray(b.photosAfter) && b.photosAfter.length > 0) ||
+                              (Array.isArray(b.photosReturn) && b.photosReturn.length > 0);
+                            if (!hasMedia) {
+                              return <div className="text-sm text-muted-foreground">No images uploaded yet.</div>;
+                            }
+                            return (
+                              <div className="space-y-4">
+                                {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
+                                  <div>
+                                    <div className="text-xs text-muted-foreground mb-2">Before Service</div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                      {b.photosBefore.map((src, i) => (
+                                        <img key={`tl-g-b-${i}`} src={src} alt="Before" className="w-full h-28 object-cover rounded border" />
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {Array.isArray(b.photosAfter) && b.photosAfter.length > 0 && (
+                                  <div>
+                                    <div className="text-xs text-muted-foreground mb-2">After Service</div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                      {b.photosAfter.map((src, i) => (
+                                        <img key={`tl-g-a-${i}`} src={src} alt="After" className="w-full h-28 object-cover rounded border" />
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {Array.isArray(b.photosReturn) && b.photosReturn.length > 0 && (
+                                  <div>
+                                    <div className="text-xs text-muted-foreground mb-2">Return</div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                      {b.photosReturn.map((src, i) => (
+                                        <img key={`tl-g-r-${i}`} src={src} alt="Return" className="w-full h-28 object-cover rounded border" />
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </div>
+                );
+              })()}
+              {(() => {
+                const hasMedia =
+                  (Array.isArray(b.photosBefore) && b.photosBefore.length > 0) ||
+                  (Array.isArray(b.photosAfter) && b.photosAfter.length > 0) ||
+                  (Array.isArray(b.photosReturn) && b.photosReturn.length > 0);
+                if (!hasMedia) return null;
+                return (
+                  <div className="flex items-center justify-end pt-2">
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button size="sm" variant="outline">View Gallery</Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-4xl">
+                        <DialogHeader>
+                          <DialogTitle>Service Gallery</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
+                            <div>
+                              <div className="text-xs text-muted-foreground mb-2">Before Service</div>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                {b.photosBefore.map((src, i) => (
+                                  <img key={`g-b-${i}`} src={src} alt="Before" className="w-full h-28 object-cover rounded border" />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {Array.isArray(b.photosAfter) && b.photosAfter.length > 0 && (
+                            <div>
+                              <div className="text-xs text-muted-foreground mb-2">After Service</div>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                {b.photosAfter.map((src, i) => (
+                                  <img key={`g-a-${i}`} src={src} alt="After" className="w-full h-28 object-cover rounded border" />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {Array.isArray(b.photosReturn) && b.photosReturn.length > 0 && (
+                            <div>
+                              <div className="text-xs text-muted-foreground mb-2">Return</div>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                {b.photosReturn.map((src, i) => (
+                                  <img key={`g-r-${i}`} src={src} alt="Return" className="w-full h-28 object-cover rounded border" />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                );
+              })()}
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+        {tab === "invoices" && (
+          <motion.div {...fadeUp} transition={{ delay: 0.4 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <h2 className="font-heading text-xl font-bold">Invoices</h2>
+            <div className="mt-4 space-y-3">
+              {(() => {
+                const email = getAuth()?.email || "";
+                const fromDb = apiBookings
+                  .filter((b) => b.customerEmail === email)
+                  .filter((b) => {
+                    const hasBill = typeof b.billTotal === "number" && b.billTotal > 0;
+                    const hasPays = Array.isArray(b.payments) && b.payments.length > 0;
+                    return hasBill || hasPays;
+                  })
+                  .map((b) => {
+                    const paid = Array.isArray(b.payments) ? b.payments.reduce((s, x) => s + (Number(x.amount || 0) || 0), 0) : 0;
+                    const amount = typeof b.billTotal === "number" && b.billTotal > 0 ? b.billTotal : paid;
+                    const id = `${b.id}-dbinv`;
+                    const invoiceNo = `INV-${(b.date ? new Date(b.date) : new Date()).getFullYear()}-${String(b.id).slice(-5).toUpperCase()}`;
+                    const status = paid && typeof b.billTotal === "number" ? (paid >= b.billTotal ? "Paid" : "Generated") : (paid > 0 ? "Paid" : "Generated");
+                    return { id, bookingId: b.id, customerEmail: email, amount, invoiceNo, status } as Invoice;
+                  });
+                const localMine = invoices.filter((inv) => inv.customerEmail === email);
+                const rows = [...fromDb, ...localMine];
+                if (rows.length === 0) {
+                  return <div className="rounded-lg border p-4 text-sm text-muted-foreground">No invoices yet</div>;
+                }
+                return rows.map((inv) => {
+                  const b = apiBookings.find((x) => x.id === inv.bookingId);
+                  return (
+                    <div key={inv.id} className="flex items-center justify-between rounded-lg border p-4">
+                      <div>
+                        <div className="font-medium">Invoice #{inv.invoiceNo}</div>
+                        <div className="text-xs text-muted-foreground">Booking: {inv.bookingId}</div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-sm">₹{inv.amount}</div>
+                        <Badge variant={inv.status === "Paid" ? "secondary" : "outline"}>{inv.status}</Badge>
+                        <Button size="sm" variant="outline" onClick={() => downloadInvoice(inv, { service: b?.service, date: b?.date })}>Download</Button>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </motion.div>
+        )}
+        {tab === "settings" && (
+          <motion.div {...fadeUp} transition={{ delay: 0.2 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <h2 className="font-heading text-xl font-bold">Settings</h2>
+            <div className="mt-4 rounded-lg border p-4 text-sm text-muted-foreground">Profile and preferences</div>
+          </motion.div>
+        )}
       </div>
     </DashboardLayout>
   );
 };
+
+function ClickPicker({ onPick }: { onPick: (latlng: L.LatLng) => void }) {
+  useMapEvents({
+    click(e) {
+      onPick(e.latlng);
+    },
+  });
+  return null;
+}
 
 export default CustomerDashboard;

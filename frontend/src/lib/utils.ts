@@ -133,14 +133,15 @@ export interface AuthSession {
   email: string;
   role: Role;
   token?: string;
+  name?: string;
 }
 
 const AUTH_KEY = "auth_session";
 
 export function getAuth(): AuthSession | null {
-  const raw = localStorage.getItem(AUTH_KEY);
-  if (!raw) return null;
   try {
+    const raw = sessionStorage.getItem(AUTH_KEY);
+    if (!raw) return null;
     return JSON.parse(raw) as AuthSession;
   } catch {
     return null;
@@ -148,11 +149,76 @@ export function getAuth(): AuthSession | null {
 }
 
 export function setAuth(session: AuthSession) {
-  localStorage.setItem(AUTH_KEY, JSON.stringify(session));
+  sessionStorage.setItem(AUTH_KEY, JSON.stringify(session));
 }
 
 export function clearAuth() {
-  localStorage.removeItem(AUTH_KEY);
+  try { sessionStorage.removeItem(AUTH_KEY); } catch { void 0; }
+  try {
+    if (typeof document !== "undefined") {
+      document.cookie = `${AUTH_KEY}=; path=/; max-age=0`;
+    }
+  } catch { void 0; }
+}
+
+export async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+  const session = getAuth();
+  const headers = {
+    "Content-Type": "application/json",
+    ...(init?.headers as Record<string, string> | undefined),
+    ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+  };
+  const res = await fetch(url, { cache: "no-store", ...init, headers });
+  if (res.status === 401) {
+    clearAuth();
+    throw new Error("Unauthorized");
+  }
+  return res;
+}
+export async function updateMyProfileApi(patch: { name?: string; email?: string; phone?: string; shopName?: string; staffRole?: string; location?: string; lat?: number; lng?: number }): Promise<{ ok: boolean; user?: ApiUser }> {
+  const endpoints = [
+    "/api/users/me",
+    "http://localhost:5000/api/users/me",
+  ];
+  let lastErr = "Failed to update profile";
+  for (const url of endpoints) {
+    try {
+      const res = await apiFetch(url, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+      let data: unknown = null;
+      let parsed = true;
+      try {
+        data = await res.json();
+      } catch {
+        parsed = false;
+      }
+      if (res.ok && (data as { ok?: unknown })?.ok === true) {
+        const u = (data as { user?: unknown }).user as Record<string, unknown> | undefined;
+        if (u) {
+          const mapped: ApiUser = {
+            id: String((u.id ?? u._id ?? "")),
+            name: String((u.name ?? "")),
+            email: String((u.email ?? "")),
+            role: String((u.role ?? "customer")).toLowerCase() as ApiUser["role"],
+            phone: u.phone as string | undefined,
+            shopName: u.shopName as string | undefined,
+            staffRole: u.staffRole as string | undefined,
+            location: u.location as { formatted?: string; lat?: number; lng?: number } | undefined,
+          };
+          return { ok: true, user: mapped };
+        }
+        return { ok: true };
+      }
+      lastErr =
+        (data && typeof (data as { message?: unknown }).message === "string" && (data as { message: string }).message) ||
+        `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
 }
 
 type CreateStaffInput = { role: "staff"; name: string; email: string; phone: string; staffRole: string; location: string; password: string };
@@ -166,6 +232,8 @@ export type ApiUser = {
   shopName?: string;
   staffRole?: string;
   location?: { formatted?: string; lat?: number; lng?: number };
+  staffOnline?: boolean;
+  liveLocation?: { lat?: number; lng?: number; updatedAt?: string };
 };
 export async function createAdminUser(input: CreateStaffInput | CreateMerchantInput) {
   const session = getAuth();
@@ -229,30 +297,38 @@ export async function listUsersFromApi(): Promise<ApiUser[]> {
   let lastErr = "Failed to fetch users";
   for (const url of endpoints) {
     try {
-      const res = await fetch(url, {
-        headers: {
-          "Content-Type": "application/json",
-          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
-        },
-      });
-      let data: any = null;
+      const res = await apiFetch(url);
+      let data: unknown = null;
       let parsed = true;
       try {
         data = await res.json();
       } catch {
         parsed = false;
       }
-      if (res.ok && data && Array.isArray(data.users)) {
-        return (data.users as any[]).map((u) => ({
-          id: String(u.id || u._id || ""),
-          name: String(u.name || ""),
-          email: String(u.email || ""),
-          role: String(u.role || "customer").toLowerCase() as ApiUser["role"],
-          phone: u.phone,
-          shopName: u.shopName,
-          staffRole: u.staffRole,
-          location: u.location,
-        }));
+      const obj = data as { users?: unknown };
+      if (res.ok && obj && Array.isArray(obj.users)) {
+        const arr = obj.users as unknown[];
+        return arr.map((u) => {
+          const r = u as Record<string, unknown>;
+          return {
+            id: String((r.id ?? r._id ?? "")),
+            name: String((r.name ?? "")),
+            email: String((r.email ?? "")),
+            role: String((r.role ?? "customer")).toLowerCase() as ApiUser["role"],
+            phone: r.phone as string | undefined,
+            shopName: r.shopName as string | undefined,
+            staffRole: r.staffRole as string | undefined,
+            location: r.location as { formatted?: string; lat?: number; lng?: number } | undefined,
+            staffOnline: typeof r.staffOnline === "boolean" ? (r.staffOnline as boolean) : undefined,
+            liveLocation: r.liveLocation && typeof r.liveLocation === "object"
+              ? {
+                  lat: (r.liveLocation as Record<string, unknown>).lat as number | undefined,
+                  lng: (r.liveLocation as Record<string, unknown>).lng as number | undefined,
+                  updatedAt: (r.liveLocation as Record<string, unknown>).updatedAt ? String((r.liveLocation as Record<string, unknown>).updatedAt) : undefined,
+                }
+              : undefined,
+          };
+        });
       }
       lastErr =
         (data && typeof data.message === "string" && data.message) ||
@@ -262,6 +338,54 @@ export async function listUsersFromApi(): Promise<ApiUser[]> {
     }
   }
   throw new Error(lastErr);
+}
+
+export async function getCurrentUserFromApi(): Promise<ApiUser | null> {
+  const endpoints = [
+    "/api/users/me",
+    "http://localhost:5000/api/users/me",
+  ];
+  for (const url of endpoints) {
+    try {
+      const res = await apiFetch(url);
+      let data: unknown = null;
+      let parsed = true;
+      try {
+        data = await res.json();
+      } catch {
+        parsed = false;
+      }
+      const obj = data as { user?: unknown };
+      if (res.ok && obj && obj.user && typeof obj.user === "object") {
+        const r = obj.user as Record<string, unknown>;
+        return {
+          id: String((r.id ?? r._id ?? "")),
+          name: String((r.name ?? "")),
+          email: String((r.email ?? "")),
+          role: String((r.role ?? "customer")).toLowerCase() as ApiUser["role"],
+          phone: r.phone as string | undefined,
+          shopName: r.shopName as string | undefined,
+          staffRole: r.staffRole as string | undefined,
+          location: r.location as { formatted?: string; lat?: number; lng?: number } | undefined,
+          staffOnline: typeof r.staffOnline === "boolean" ? (r.staffOnline as boolean) : undefined,
+          liveLocation: r.liveLocation && typeof r.liveLocation === "object"
+            ? {
+                lat: (r.liveLocation as Record<string, unknown>).lat as number | undefined,
+                lng: (r.liveLocation as Record<string, unknown>).lng as number | undefined,
+                updatedAt: (r.liveLocation as Record<string, unknown>).updatedAt ? String((r.liveLocation as Record<string, unknown>).updatedAt) : undefined,
+              }
+            : undefined,
+        };
+      }
+      if (!res.ok && parsed && typeof (data as { message?: unknown }).message === "string") {
+        const msg = (data as { message: string }).message;
+        throw new Error(msg || "Failed to fetch current user");
+      }
+    } catch (_e) {
+      // fall through to next endpoint
+    }
+  }
+  return null;
 }
 
 export async function deleteUserByAdmin(id: string): Promise<{ ok: boolean }> {
@@ -280,7 +404,7 @@ export async function deleteUserByAdmin(id: string): Promise<{ ok: boolean }> {
           ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
         },
       });
-      let data: any = null;
+      let data: unknown = null;
       let parsed = true;
       try {
         data = await res.json();
@@ -363,6 +487,451 @@ export function setBookingStatus(id: string, status: BookingStatus) {
   updateBooking(id, { status });
 }
 
+export type ApiBooking = {
+  id: string;
+  customerEmail: string;
+  customerPhone?: string;
+  vehicle: "car" | "bike";
+  service: string;
+  location?: { formatted?: string; lat?: number; lng?: number };
+  date?: string;
+  time?: string;
+  registration?: string;
+  status: string;
+  merchantId?: string;
+  staffId?: string;
+  repairNotes?: string;
+  photosBefore?: string[];
+  photosAfter?: string[];
+  photosReturn?: string[];
+  price?: number;
+  billTotal?: number;
+  estimateLabour?: number;
+  estimateParts?: number;
+  estimateAdditional?: number;
+  estimateTotal?: number;
+  payments?: { amount?: number; method?: string; reference?: string; byRole?: string; time?: string }[];
+  ratingValue?: number;
+  ratingComment?: string;
+  dropAt?: string;
+  dropByStaffId?: string;
+  lastUpdatedByRole?: string;
+  lastUpdatedMessage?: string;
+  lastUpdatedAt?: string;
+  staffAcceptanceStatus?: "none" | "pending" | "accepted" | "declined";
+};
+
+export async function createBookingApi(input: { customerEmail: string; customerPhone?: string; vehicle: "car" | "bike"; service: string; location?: string | { formatted?: string; lat?: number; lng?: number }; date?: string; time?: string; registration?: string }) {
+  const endpoints = [
+    "/api/bookings",
+    "http://localhost:5000/api/bookings",
+  ];
+  let lastErr = "Failed to create booking";
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      let data: unknown = null;
+      let parsed = true;
+      try {
+        data = await res.json();
+      } catch {
+        parsed = false;
+      }
+      const obj = data as { booking?: { id?: unknown } };
+      if (res.ok && obj && obj.booking && obj.booking.id) {
+        return String(obj.booking.id || "");
+      }
+      lastErr =
+        (data && typeof data.message === "string" && data.message) ||
+        `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
+}
+
+export async function listApiBookings(params?: { email?: string }): Promise<ApiBooking[]> {
+  const qs = new URLSearchParams();
+  if (params?.email) qs.set("email", params.email);
+  const endpoints = [
+    `/api/bookings?${qs.toString()}`,
+    `http://localhost:5000/api/bookings?${qs.toString()}`,
+  ];
+  let lastErr = "Failed to fetch bookings";
+  for (const url of endpoints) {
+    try {
+      const res = await apiFetch(url);
+      let data: unknown = null;
+      let parsed = true;
+      try {
+        data = await res.json();
+      } catch {
+        parsed = false;
+      }
+      const obj = data as { bookings?: unknown };
+      if (res.ok && obj && Array.isArray(obj.bookings)) {
+        const arr = obj.bookings as unknown[];
+        return arr.map((b) => {
+          const r = b as Record<string, unknown>;
+          const vehicleStr = String(r.vehicle ?? "car");
+          const merchantVal = r.merchantId as unknown;
+          const staffVal = r.staffId as unknown;
+          const merchantId =
+            typeof merchantVal === "string"
+              ? merchantVal
+              : merchantVal && typeof (merchantVal as { toString?: () => string }).toString === "function"
+                ? String((merchantVal as { toString: () => string }).toString())
+                : (merchantVal && typeof (merchantVal as Record<string, unknown>)._id === "string"
+                    ? ((merchantVal as Record<string, unknown>)._id as string)
+                    : undefined);
+          const staffId =
+            typeof staffVal === "string"
+              ? staffVal
+              : staffVal && typeof (staffVal as { toString?: () => string }).toString === "function"
+                ? String((staffVal as { toString: () => string }).toString())
+                : (staffVal && typeof (staffVal as Record<string, unknown>)._id === "string"
+                    ? ((staffVal as Record<string, unknown>)._id as string)
+                    : undefined);
+          const payments = Array.isArray((r as Record<string, unknown>).payments)
+            ? ((r as Record<string, unknown>).payments as unknown[]).map((p) => {
+                const q = p as Record<string, unknown>;
+                return {
+                  amount: typeof q.amount === "number" ? (q.amount as number) : undefined,
+                  method: typeof q.method === "string" ? (q.method as string) : undefined,
+                  reference: typeof q.reference === "string" ? (q.reference as string) : undefined,
+                  byRole: typeof q.byRole === "string" ? (q.byRole as string) : undefined,
+                  time: q.time ? String(q.time) : undefined,
+                };
+              })
+            : undefined;
+          return {
+            id: String((r.id ?? r._id ?? "")),
+            customerEmail: String((r.customerEmail ?? "")),
+            customerPhone: r.customerPhone as string | undefined,
+            vehicle: (vehicleStr === "bike" ? "bike" : "car") as "car" | "bike",
+            service: String((r.service ?? "")),
+            location: r.location as { formatted?: string; lat?: number; lng?: number } | undefined,
+            date: r.date as string | undefined,
+            time: r.time as string | undefined,
+              registration: r.registration as string | undefined,
+            status: String((r.status ?? "")),
+            merchantId,
+            staffId,
+            repairNotes: r.repairNotes as string | undefined,
+            photosBefore: r.photosBefore as string[] | undefined,
+            photosAfter: r.photosAfter as string[] | undefined,
+            photosReturn: (r as Record<string, unknown>).photosReturn as string[] | undefined,
+            price: typeof r.price === "number" ? (r.price as number) : undefined,
+            billTotal: ((): number | undefined => {
+              const v = (r as Record<string, unknown>).billTotal;
+              return typeof v === "number" ? v : undefined;
+            })(),
+            dropAt: ((): string | undefined => {
+              const v = (r as Record<string, unknown>).dropAt;
+              return v ? String(v) : undefined;
+            })(),
+            dropByStaffId: ((): string | undefined => {
+              const v = (r as Record<string, unknown>).dropByStaffId;
+              if (typeof v === "string") return v;
+              if (v && typeof (v as { toString?: () => string }).toString === "function") {
+                return String((v as { toString: () => string }).toString());
+              }
+              if (v && typeof (v as Record<string, unknown>)._id === "string") {
+                return (v as Record<string, unknown>)._id as string;
+              }
+              return undefined;
+            })(),
+            estimateLabour: ((): number | undefined => {
+              const v = (r as Record<string, unknown>).estimateLabour ?? (r as Record<string, unknown>).labour_cost;
+              return typeof v === "number" ? v : undefined;
+            })(),
+            estimateParts: ((): number | undefined => {
+              const v = (r as Record<string, unknown>).estimateParts ?? (r as Record<string, unknown>).parts_cost;
+              return typeof v === "number" ? v : undefined;
+            })(),
+            estimateAdditional: ((): number | undefined => {
+              const v = (r as Record<string, unknown>).estimateAdditional ?? (r as Record<string, unknown>).additional_work;
+              return typeof v === "number" ? v : undefined;
+            })(),
+            estimateTotal: ((): number | undefined => {
+              const v = (r as Record<string, unknown>).estimateTotal;
+              if (typeof v === "number") return v;
+              const l = (r as Record<string, unknown>).labour_cost;
+              const p = (r as Record<string, unknown>).parts_cost;
+              const a = (r as Record<string, unknown>).additional_work;
+              const sum = [l, p, a].map((x) => (typeof x === "number" ? x : 0)).reduce((s, n) => s + n, 0);
+              return sum > 0 ? sum : undefined;
+            })(),
+            ratingValue: ((): number | undefined => {
+              const v = (r as Record<string, unknown>).ratingValue;
+              return typeof v === "number" ? v : undefined;
+            })(),
+            ratingComment: ((): string | undefined => {
+              const v = (r as Record<string, unknown>).ratingComment;
+              return typeof v === "string" ? v : undefined;
+            })(),
+            lastUpdatedByRole: typeof r.lastUpdatedByRole === "string" ? (r.lastUpdatedByRole as string) : undefined,
+            lastUpdatedMessage: typeof r.lastUpdatedMessage === "string" ? (r.lastUpdatedMessage as string) : undefined,
+            lastUpdatedAt: r.lastUpdatedAt ? String(r.lastUpdatedAt) : undefined,
+            staffAcceptanceStatus:
+              typeof r.staffAcceptanceStatus === "string" &&
+              (["none", "pending", "accepted", "declined"] as const).includes(
+                String(r.staffAcceptanceStatus) as "none" | "pending" | "accepted" | "declined"
+              )
+                ? (String(r.staffAcceptanceStatus) as "none" | "pending" | "accepted" | "declined")
+                : undefined,
+            payments,
+          };
+        });
+      }
+      lastErr =
+        (data && typeof data.message === "string" && data.message) ||
+        `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
+}
+
+export async function patchBookingApi(id: string, payload: Record<string, unknown>): Promise<void> {
+  const session = getAuth();
+  const endpoints = [
+    `/api/bookings/${encodeURIComponent(id)}`,
+    `http://localhost:5000/api/bookings/${encodeURIComponent(id)}`,
+  ];
+  let lastErr = "Failed to update booking";
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      let data: unknown = null;
+      let parsed = true;
+      try {
+        data = await res.json();
+      } catch {
+        parsed = false;
+      }
+      if (res.ok && data && data.ok) {
+        return;
+      }
+      lastErr =
+        (data && typeof data.message === "string" && data.message) ||
+        `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
+}
+export async function deleteApiBooking(id: string): Promise<{ ok: boolean }> {
+  const session = getAuth();
+  const endpoints = [
+    `/api/bookings/${encodeURIComponent(id)}`,
+    `http://localhost:5000/api/bookings/${encodeURIComponent(id)}`,
+  ];
+  let lastErr = "Failed to delete booking";
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+        },
+      });
+      let data: unknown = null;
+      let parsed = true;
+      try {
+        data = await res.json();
+      } catch {
+        parsed = false;
+      }
+      if (res.ok && data && (data as Record<string, unknown>).ok) {
+        return { ok: true };
+      }
+      lastErr =
+        (data && typeof (data as Record<string, unknown>).message === "string" && (data as Record<string, unknown>).message as string) ||
+        `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
+}
+
+export type AdminDashboardStats = {
+  totalUsers: number;
+  activeBookings: number;
+  revenue: number;
+  onlineStaffCount: number;
+  updatedAt?: string;
+};
+export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
+  const endpoints = ['/api/dashboard/admin', 'http://localhost:5000/api/dashboard/admin'];
+  let lastErr = 'Failed to fetch admin dashboard stats';
+  for (const url of endpoints) {
+    try {
+      const res = await apiFetch(url);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data && data.ok && data.stats) {
+        return { ...data.stats, updatedAt: data.updatedAt } as AdminDashboardStats;
+      }
+      lastErr =
+        (data && typeof data.message === 'string' && data.message) ||
+        `HTTP ${res.status}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : 'Network error';
+    }
+  }
+  throw new Error(lastErr);
+}
+
+export type MerchantDashboardStats = {
+  activeServices: number;
+  totalBookings: number;
+  earnings: number;
+  ratingAvg: number | null;
+  ratingCount: number;
+  updatedAt?: string;
+};
+export async function getMerchantDashboardStats(): Promise<MerchantDashboardStats> {
+  const endpoints = ['/api/dashboard/merchant', 'http://localhost:5000/api/dashboard/merchant'];
+  let lastErr = 'Failed to fetch merchant dashboard stats';
+  for (const url of endpoints) {
+    try {
+      const res = await apiFetch(url);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data && data.ok && data.stats) {
+        return { ...data.stats, updatedAt: data.updatedAt } as MerchantDashboardStats;
+      }
+      lastErr =
+        (data && typeof data.message === 'string' && data.message) ||
+        `HTTP ${res.status}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : 'Network error';
+    }
+  }
+  throw new Error(lastErr);
+}
+export async function setStaffOnlineApi(online: boolean): Promise<{ ok: boolean; online: boolean }> {
+  const session = getAuth();
+  const endpoints = [
+    `/api/users/me/online`,
+    `http://localhost:5000/api/users/me/online`,
+  ];
+  let lastErr = "Failed to update status";
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+        },
+        body: JSON.stringify({ online }),
+      });
+      let data: unknown = null;
+      let parsed = true;
+      try {
+        data = await res.json();
+      } catch {
+        parsed = false;
+      }
+      if (res.ok) {
+        const obj = (data ?? {}) as { ok?: unknown; online?: unknown; message?: unknown };
+        if (obj && obj.ok === true) {
+          return { ok: true, online: Boolean(obj.online) };
+        }
+      }
+      lastErr =
+        (data && typeof (data as { message?: unknown }).message === "string" && (data as { message: string }).message) ||
+        `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
+}
+export async function setStaffLocationApi(lat: number, lng: number): Promise<{ ok: boolean }> {
+  const session = getAuth();
+  const endpoints = [
+    `/api/users/me/location`,
+    `http://localhost:5000/api/users/me/location`,
+  ];
+  let lastErr = "Failed to update location";
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+        },
+        body: JSON.stringify({ lat, lng }),
+      });
+      let data: unknown = null;
+      let parsed = true;
+      try {
+        data = await res.json();
+      } catch {
+        parsed = false;
+      }
+      if (res.ok && (data as { ok?: unknown })?.ok === true) {
+        return { ok: true };
+      }
+      lastErr =
+        (data && typeof (data as { message?: unknown }).message === "string" && (data as { message: string }).message) ||
+        `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
+}
+export async function updateUserLocationByAdmin(id: string, lat: number, lng: number): Promise<{ ok: boolean }> {
+  const session = getAuth();
+  const endpoints = [
+    `/api/users/${id}/location`,
+    `http://localhost:5000/api/users/${id}/location`,
+  ];
+  let lastErr = "Failed to update location";
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+        },
+        body: JSON.stringify({ lat, lng }),
+      });
+      let data: unknown = null;
+      let parsed = true;
+      try { data = await res.json(); } catch { parsed = false; }
+      if (res.ok && (data as { ok?: unknown })?.ok === true) {
+        return { ok: true };
+      }
+      lastErr =
+        (data && typeof (data as { message?: unknown }).message === "string" && (data as { message: string }).message) ||
+        `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
+}
 export function assignBookingSlot(id: string, slot: string) {
   updateBooking(id, { slot });
 }
@@ -431,6 +1000,89 @@ export function listCustomerVehicles(ownerEmail: string): CustomerVehicle[] {
   return readVehicles().filter((v) => v.ownerEmail === ownerEmail);
 }
 
+export async function listCustomerVehiclesFromApi(ownerEmail: string): Promise<CustomerVehicle[]> {
+  const qs = new URLSearchParams({ email: ownerEmail });
+  const endpoints = [
+    `/api/users/vehicles?${qs.toString()}`,
+    `http://localhost:5000/api/users/vehicles?${qs.toString()}`,
+  ];
+  let lastErr = "Failed to fetch vehicles";
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url);
+      let data: unknown = null;
+      let parsed = true;
+      try {
+        data = await res.json();
+      } catch {
+        parsed = false;
+      }
+      const obj = data as { vehicles?: unknown };
+      if (res.ok && obj && Array.isArray(obj.vehicles)) {
+        const arr = obj.vehicles as unknown[];
+        return arr.map((v) => {
+          const r = v as Record<string, unknown>;
+          return {
+            id: String((r.id ?? r._id) ?? ""),
+            ownerEmail: String((r.ownerEmail ?? ownerEmail) ?? ""),
+            type: (String(r.type ?? "car") === "bike" ? "bike" : "car") as VehicleType,
+            make: String(r.make ?? ""),
+            model: String(r.model ?? ""),
+            year: typeof r.year === "string" ? r.year : "",
+            engine: typeof r.engine === "string" ? r.engine : undefined,
+            displacement: typeof r.displacement === "string" ? r.displacement : undefined,
+            power_hp: typeof r.power_hp === "string" ? r.power_hp : undefined,
+            vin: typeof r.vin === "string" ? r.vin : undefined,
+            plate: typeof r.plate === "string" ? r.plate : undefined,
+            createdAt: String(r.createdAt ?? ""),
+          };
+        });
+      }
+      {
+        const msg = (data as { message?: unknown })?.message;
+        lastErr = typeof msg === "string" ? msg : `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
+      }
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
+}
+
+export async function createCustomerVehicleApi(input: { ownerEmail: string; type: VehicleType; make?: string; model?: string; year?: string; engine?: string; displacement?: string; power_hp?: string; vin?: string; plate: string }) {
+  const endpoints = [
+    `/api/users/vehicles`,
+    `http://localhost:5000/api/users/vehicles`,
+  ];
+  let lastErr = "Failed to save vehicle";
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      let data: unknown = null;
+      let parsed = true;
+      try {
+        data = await res.json();
+      } catch {
+        parsed = false;
+      }
+      const obj = data as { vehicle?: { id?: unknown } };
+      if (res.ok && obj && obj.vehicle && obj.vehicle.id) {
+        return String(obj.vehicle.id || "");
+      }
+      {
+        const msg = (data as { message?: unknown })?.message;
+        lastErr = typeof msg === "string" ? msg : `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
+      }
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
+}
 export async function fetchVehicleDetails(input: { type: VehicleType; make?: string; model?: string; year?: string; vin?: string; reg?: string }) {
   const params = new URLSearchParams();
   params.set("type", input.type);
@@ -447,15 +1099,16 @@ export async function fetchVehicleDetails(input: { type: VehicleType; make?: str
   for (const url of endpoints) {
     try {
       const res = await fetch(url);
-      let data: any = null;
+      let data: unknown = null;
       let parsed = true;
       try {
         data = await res.json();
       } catch {
         parsed = false;
       }
-      if (res.ok && data && data.vehicle) {
-        return data.vehicle as { make?: string; model?: string; year?: string; engine?: string; displacement?: string; power_hp?: string; type?: string; registration?: string };
+      const obj = data as { vehicle?: unknown };
+      if (res.ok && obj && obj.vehicle && typeof obj.vehicle === "object") {
+        return obj.vehicle as { make?: string; model?: string; year?: string; engine?: string; displacement?: string; power_hp?: string; type?: string; registration?: string };
       }
       lastErr =
         (data && typeof data.message === "string" && data.message) ||
@@ -464,7 +1117,7 @@ export async function fetchVehicleDetails(input: { type: VehicleType; make?: str
       lastErr = e instanceof Error ? e.message : "Network error";
     }
   }
-  throw new Error(lastErr);
+  return { type: input.type, registration: input.reg };
 }
 
 export function addCustomerVehicle(ownerEmail: string, entry: Omit<CustomerVehicle, "id" | "ownerEmail" | "createdAt">) {
@@ -751,4 +1404,91 @@ export function markInvoicePaid(id: string) {
 
 export function findBooking(id: string): Booking | undefined {
   return readBookings().find((b) => b.id === id);
+}
+
+export function downloadInvoice(inv: Invoice, booking?: { service?: string; date?: string }) {
+  const b = findBooking(inv.bookingId);
+  const svc = booking?.service || b?.service || "-";
+  const dt = booking?.date || b?.date || "-";
+  const amount = Number(inv.amount || 0).toLocaleString("en-IN");
+  const now = new Date();
+  const dateStr = now.toLocaleString();
+  const html =
+    '<!doctype html><html><head><meta charset="utf-8"><title>' +
+    inv.invoiceNo +
+    '</title><style>body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111}h1{margin:0 0 8px 0}table{width:100%;border-collapse:collapse;margin-top:16px}td,th{border:1px solid #ddd;padding:8px;text-align:left}small{color:#666}</style></head><body>' +
+    '<h1>MotoHub Invoice</h1>' +
+    '<div><strong>Invoice No:</strong> ' +
+    inv.invoiceNo +
+    '</div><div><strong>Date:</strong> ' +
+    dateStr +
+    '</div><div><strong>Status:</strong> ' +
+    inv.status +
+    '</div><div style="margin-top:8px"><strong>Billed To:</strong> ' +
+    inv.customerEmail +
+    "</div>" +
+    "<table><thead><tr><th>Booking</th><th>Service</th><th>Date</th><th>Amount</th></tr></thead><tbody>" +
+    "<tr><td>" +
+    inv.bookingId +
+    "</td><td>" +
+    svc +
+    "</td><td>" +
+    dt +
+    "</td><td>₹" +
+    amount +
+    "</td></tr></tbody></table>" +
+    "<p><small>This is a system generated invoice.</small></p>" +
+    "</body></html>";
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${inv.invoiceNo}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export interface NotificationEntry {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  date: string;
+}
+
+const NOTIFICATIONS_KEY = "notifications";
+
+function readNotifications(): NotificationEntry[] {
+  const raw = localStorage.getItem(NOTIFICATIONS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as NotificationEntry[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeNotifications(items: NotificationEntry[]) {
+  localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(items));
+}
+
+export function addNotificationForUser(userId: string, title: string, message: string) {
+  const now = new Date();
+  const date = now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const items = readNotifications();
+  items.push({ id, userId, title, message, date });
+  writeNotifications(items);
+}
+
+export function listNotificationsForUser(userId: string): NotificationEntry[] {
+  return readNotifications().filter((n) => n.userId === userId);
+}
+
+export function clearNotificationsForUser(userId: string) {
+  const items = readNotifications().filter((n) => n.userId !== userId);
+  writeNotifications(items);
 }

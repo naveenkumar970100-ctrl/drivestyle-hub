@@ -1,25 +1,21 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Users, UserCheck, UserX, ShoppingBag, TrendingUp, DollarSign, Loader2 } from "lucide-react";
+import { Users, UserCheck, UserX, ShoppingBag, TrendingUp, IndianRupee, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { listApprovals, setApprovalStatus, listRegistrations, deleteRegistration, listApprovalEvents, listBookings, listServices, addService, updateService, deleteService, setServicePrice, setBookingStatus, assignBookingSlot, listStaff, addStaff, deleteStaff, assignJob, listJobs, setJobStatus, listPayments, addPayment, setPaymentStatus, listInvoices, generateInvoice, markInvoicePaid, createAdminUser, addRegistration, listUsersFromApi, deleteUserByAdmin, type ApiUser, type Approval, type Registration, type ApprovalEvent, type Booking, type ServiceItem, type VehicleType, type BookingStatus, type StaffMember, type StaffRoleType, type Job, type JobStatus, type Payment, type Invoice } from "@/lib/utils";
+import { listApprovals, setApprovalStatus, listRegistrations, deleteRegistration, listApprovalEvents, listBookings, listServices, addService, updateService, deleteService, setServicePrice, setBookingStatus, assignBookingSlot, listStaff, addStaff, deleteStaff, assignJob, listJobs, setJobStatus, listPayments, addPayment, setPaymentStatus, listInvoices, generateInvoice, markInvoicePaid, downloadInvoice, addNotificationForUser, createAdminUser, addRegistration, listUsersFromApi, deleteUserByAdmin, deleteApiBooking, updateUserLocationByAdmin, type ApiUser, type Approval, type Registration, type ApprovalEvent, type Booking, type ServiceItem, type VehicleType, type BookingStatus, type StaffMember, type StaffRoleType, type Job, type JobStatus, type Payment, type Invoice } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "react-router-dom";
-import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, useMapEvents, type MapContainerProps } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { listApiBookings, patchBookingApi, type ApiBooking, getAdminDashboardStats } from "@/lib/utils";
 
-const stats = [
-  { label: "Total Users", value: "2,456", icon: Users, change: "+12%" },
-  { label: "Pending Approvals", value: "18", icon: UserCheck, change: "3 new" },
-  { label: "Active Bookings", value: "342", icon: ShoppingBag, change: "+8%" },
-  { label: "Revenue", value: "$45,230", icon: DollarSign, change: "+15%" },
-];
+ 
 
 const AdminDashboard = () => {
   const { toast } = useToast();
@@ -28,12 +24,16 @@ const AdminDashboard = () => {
     const p = new URLSearchParams(search);
     const t = p.get("tab");
     const allowed = new Set([
+      "my-profile",
       "create-accounts",
+      "merchants",
+      "staff",
+      "merchant-map",
       "recent-bookings",
       "service-history",
       "invoices",
       "registration-history",
-      "approval-history",
+      "staff-live-map",
       "settings",
       "dashboard",
     ]);
@@ -43,10 +43,14 @@ const AdminDashboard = () => {
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [approvalEvents, setApprovalEvents] = useState<ApprovalEvent[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [apiBookings, setApiBookings] = useState<ApiBooking[]>([]);
+  const [loadingApiBookings, setLoadingApiBookings] = useState(false);
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [newInvoice, setNewInvoice] = useState<{ bookingId: string; email: string; amount: number }>({ bookingId: "", email: "", amount: 0 });
+  const [savingInvoice, setSavingInvoice] = useState(false);
   const [vehicleType, setVehicleType] = useState<VehicleType>("car");
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [newService, setNewService] = useState({ title: "", desc: "", price: 0 });
@@ -60,18 +64,39 @@ const AdminDashboard = () => {
   const [savingMerchant, setSavingMerchant] = useState(false);
   const [savingStaff, setSavingStaff] = useState(false);
   const [users, setUsers] = useState<ApiUser[]>([]);
-  delete (L.Icon.Default as any).prototype._getIconUrl;
+  const [adminStats, setAdminStats] = useState<{ totalUsers: number; activeBookings: number; revenue: number; onlineStaffCount: number } | null>(null);
+  const [openReg, setOpenReg] = useState<Registration | null>(null);
+  const iconDefaultProto = L.Icon.Default.prototype as unknown as { _getIconUrl?: () => string };
+  delete iconDefaultProto._getIconUrl;
   L.Icon.Default.mergeOptions({
     iconRetinaUrl: new URL("leaflet/dist/images/marker-icon-2x.png", import.meta.url).toString(),
     iconUrl: new URL("leaflet/dist/images/marker-icon.png", import.meta.url).toString(),
     shadowUrl: new URL("leaflet/dist/images/marker-shadow.png", import.meta.url).toString(),
   });
+  const merchantMapProps: MapContainerProps = useMemo(
+    () => ({
+      center: (merchantPos ?? [12.9716, 77.5946]) as [number, number],
+      zoom: 13,
+      style: { height: 256 },
+      scrollWheelZoom: true,
+    }),
+    [merchantPos]
+  );
+  const staffMapProps: MapContainerProps = useMemo(
+    () => ({
+      center: (staffPos ?? [12.9716, 77.5946]) as [number, number],
+      zoom: 13,
+      style: { height: 256 },
+      scrollWheelZoom: true,
+    }),
+    [staffPos]
+  );
   const updateFromLatLng = (latStr?: string, lngStr?: string) => {
     const lt = typeof latStr === "string" ? parseFloat(latStr) : NaN;
     const lg = typeof lngStr === "string" ? parseFloat(lngStr) : NaN;
     if (!Number.isNaN(lt) && !Number.isNaN(lg)) {
       setMerchantPos([lt, lg]);
-      setNewMerchant((m) => ({ ...m, location: `${lt.toFixed(6)},${lg.toFixed(6)}` }));
+      setNewMerchant((m) => ({ ...m, location: `${lt.toFixed(8)},${lg.toFixed(8)}` }));
     }
   };
   const ClickMarker = () => {
@@ -79,7 +104,7 @@ const AdminDashboard = () => {
       click(e) {
         const { lat, lng } = e.latlng;
         setMerchantPos([lat, lng]);
-        setNewMerchant({ ...newMerchant, location: `${lat.toFixed(6)},${lng.toFixed(6)}` });
+        setNewMerchant({ ...newMerchant, location: `${lat.toFixed(8)},${lng.toFixed(8)}` });
       },
     });
     return merchantPos ? <Marker position={merchantPos} /> : null;
@@ -89,7 +114,7 @@ const AdminDashboard = () => {
       click(e) {
         const { lat, lng } = e.latlng;
         setStaffPos([lat, lng]);
-        setNewStaffAccount({ ...newStaffAccount, location: `${lat.toFixed(6)},${lng.toFixed(6)}` });
+        setNewStaffAccount({ ...newStaffAccount, location: `${lat.toFixed(8)},${lng.toFixed(8)}` });
       },
     });
     return staffPos ? <Marker position={staffPos} /> : null;
@@ -99,7 +124,7 @@ const AdminDashboard = () => {
       navigator.geolocation.getCurrentPosition((pos) => {
         const { latitude, longitude } = pos.coords;
         setMerchantPos([latitude, longitude]);
-        setNewMerchant({ ...newMerchant, location: `${latitude.toFixed(6)},${longitude.toFixed(6)}` });
+        setNewMerchant({ ...newMerchant, location: `${latitude.toFixed(8)},${longitude.toFixed(8)}` });
       });
     }
   };
@@ -108,7 +133,7 @@ const AdminDashboard = () => {
       navigator.geolocation.getCurrentPosition((pos) => {
         const { latitude, longitude } = pos.coords;
         setStaffPos([latitude, longitude]);
-        setNewStaffAccount({ ...newStaffAccount, location: `${latitude.toFixed(6)},${longitude.toFixed(6)}` });
+        setNewStaffAccount({ ...newStaffAccount, location: `${latitude.toFixed(8)},${longitude.toFixed(8)}` });
       });
     }
   };
@@ -126,13 +151,69 @@ const AdminDashboard = () => {
         const u = await listUsersFromApi();
         setUsers(u);
       } catch (e) {
-        // ignore
+        /* ignore */
+      }
+      try {
+        setLoadingApiBookings(true);
+        const b = await listApiBookings();
+        setApiBookings(b);
+      } catch (e) {
+        /* ignore */
+      } finally {
+        setLoadingApiBookings(false);
       }
     })();
   }, []);
   useEffect(() => {
     setServices(listServices(vehicleType));
   }, [vehicleType]);
+  useEffect(() => {
+    if (tab === "recent-bookings" || tab === "dashboard") {
+      (async () => {
+        try {
+          const u = await listUsersFromApi();
+          setUsers(u);
+        } catch {
+          /* ignore */
+        }
+        try {
+          setLoadingApiBookings(true);
+          const b = await listApiBookings();
+          setApiBookings(b);
+        } catch {
+          /* ignore */
+        } finally {
+          setLoadingApiBookings(false);
+        }
+      })();
+    }
+  }, [tab]);
+  useEffect(() => {
+    let timer: number | undefined;
+    if (tab === "dashboard" || tab === "recent-bookings") {
+      timer = window.setInterval(async () => {
+        try {
+          if (tab === "dashboard") {
+            const u = await listUsersFromApi();
+            setUsers(u);
+            try {
+              const s = await getAdminDashboardStats();
+              setAdminStats({ totalUsers: s.totalUsers, activeBookings: s.activeBookings, revenue: s.revenue, onlineStaffCount: s.onlineStaffCount });
+            } catch { /* ignore */ }
+          }
+          try {
+            setLoadingApiBookings(true);
+            const b = await listApiBookings();
+            setApiBookings(b);
+          } catch { /* ignore */ }
+          finally { setLoadingApiBookings(false); }
+        } catch { void 0; }
+      }, 3000);
+    }
+    return () => {
+      if (timer) window.clearInterval(timer);
+    };
+  }, [tab]);
 
   const serviceHistory = useMemo(() => {
     const filtered = bookings.filter((b) => (vehicleType === "bike" ? b.vehicle === "bike" : b.vehicle === "car"));
@@ -148,23 +229,105 @@ const AdminDashboard = () => {
     return Array.from(map.entries()).map(([service, stats]) => ({ service, ...stats }));
   }, [bookings, vehicleType]);
   const fadeUp = { initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.4 } };
+  const removeRegistrationAndUser = async (email: string) => {
+    try {
+      const target = users.find((u) => String(u.email).toLowerCase() === String(email).toLowerCase());
+      if (target?.id) {
+        await deleteUserByAdmin(target.id);
+      }
+      deleteRegistration(email);
+      setRegistrations(listRegistrations());
+      try {
+        const u = await listUsersFromApi();
+        setUsers(u);
+      } catch {
+        // ignore refresh error
+      }
+      toast({ title: "Removed", description: email });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast({ title: "Failed", description: message, variant: "destructive" });
+    }
+  };
+  const summaryStats = useMemo(() => {
+    const totalUsers = adminStats ? adminStats.totalUsers : users.length;
+    const activeBookings = apiBookings.filter((b) => String(b.status || "").toUpperCase() !== "COMPLETED").length;
+    const revenue = adminStats ? adminStats.revenue : apiBookings
+      .filter((b) => {
+        const statusOk = ["DELIVERED", "COMPLETED"].includes(String(b.status || "").toUpperCase());
+        const hasPayments = Array.isArray(b.payments) && b.payments.length > 0;
+        return statusOk || hasPayments;
+      })
+      .reduce((sum, b) => {
+        const bill = typeof b.billTotal === "number" ? b.billTotal : 0;
+        if (bill && bill > 0) return sum + bill;
+        const p = Array.isArray(b.payments) ? b.payments.reduce((s, x) => s + (Number(x.amount || 0) || 0), 0) : 0;
+        return sum + p;
+      }, 0);
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const sevenDaysAgo = new Date(startOfToday.getTime() - 6 * 24 * 60 * 60 * 1000);
+    let paidToday = 0;
+    let paid7Days = 0;
+    for (const b of apiBookings) {
+      const pays = Array.isArray(b.payments) ? b.payments : [];
+      for (const p of pays) {
+        const amt = Number(p.amount || 0) || 0;
+        if (!p.time || !amt) continue;
+        const t = new Date(p.time);
+        if (t >= startOfToday) paidToday += amt;
+        if (t >= sevenDaysAgo) paid7Days += amt;
+      }
+    }
+    return [
+      { label: "Total Users", value: totalUsers.toLocaleString(), icon: Users, change: "" },
+      { label: "Active Bookings", value: activeBookings.toString(), icon: ShoppingBag, change: "" },
+      { label: "Revenue", value: `₹${revenue.toLocaleString("en-IN")}`, icon: IndianRupee, change: "" },
+      { label: "Paid Today", value: `₹${paidToday.toLocaleString("en-IN")}`, icon: IndianRupee, change: "" },
+      { label: "Paid 7 Days", value: `₹${paid7Days.toLocaleString("en-IN")}`, icon: IndianRupee, change: "" },
+    ] as Array<{ label: string; value: string; icon: typeof Users; change: string }>;
+  }, [users, apiBookings, adminStats]);
   return (
     <DashboardLayout role="admin">
       <div className="space-y-6">
         <motion.h1 {...fadeUp} className="font-heading text-3xl font-bold">
-          {tab === "dashboard" ? "Admin Dashboard" :
+          {tab === "my-profile" ? "My Profile" :
+           tab === "dashboard" ? "Admin Dashboard" :
            tab === "create-accounts" ? "Create Accounts" :
+           tab === "merchants" ? "Merchants" :
+           tab === "staff" ? "Staff" :
+           tab === "merchant-map" ? "Merchant Locations" :
            tab === "recent-bookings" ? "Recent Bookings" :
            tab === "service-history" ? "Service History" :
            tab === "invoices" ? "Invoices" :
            tab === "registration-history" ? "Registration History" :
-           tab === "approval-history" ? "Approval History" :
+           tab === "staff-live-map" ? "Staff Live Location" :
            "Settings"}
         </motion.h1>
 
+        {tab === "my-profile" && (
+          <motion.div {...fadeUp} transition={{ delay: 0.15 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <h2 className="font-heading text-xl font-bold mb-4">Admin Details</h2>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="rounded-lg border p-4">
+                <div className="text-xs text-muted-foreground">Role</div>
+                <div className="text-lg font-semibold">Admin</div>
+              </div>
+              <div className="rounded-lg border p-4">
+                <div className="text-xs text-muted-foreground">Name</div>
+                <div className="text-lg font-semibold">admin</div>
+              </div>
+              <div className="rounded-lg border p-4">
+                <div className="text-xs text-muted-foreground">Email</div>
+                <div className="text-lg font-semibold">admin@gmail.com</div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
         {tab === "dashboard" && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {stats.map((s, i) => (
+          {summaryStats.map((s, i) => (
             <motion.div key={s.label} {...fadeUp} transition={{ delay: i * 0.1 }}
               className="rounded-xl border bg-card p-5 shadow-card"
             >
@@ -217,30 +380,13 @@ const AdminDashboard = () => {
                       <Input value={newMerchant.address} onChange={(e) => setNewMerchant({ ...newMerchant, address: e.target.value })} placeholder="Street, City, State, ZIP" />
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm font-medium">Location</label>
+                      <label className="mb-1 block text-sm font-medium">Selected Location</label>
                       <div className="flex items-center gap-2">
-                        <Input
-                          value={newMerchant.location}
-                          onChange={(e) => setNewMerchant({ ...newMerchant, location: e.target.value })}
-                          onBlur={(e) => {
-                            const parts = e.target.value.split(",").map((s) => s.trim());
-                            if (parts.length === 2) {
-                              updateFromLatLng(parts[0], parts[1]);
-                            }
-                          }}
-                          placeholder="lat, lng"
-                        />
+                        <Input value={newMerchant.location} readOnly />
                         <Button type="button" variant="outline" onClick={useMyLocation}>Use My Location</Button>
                       </div>
                       <div className="mt-3 rounded-lg border">
-                        <MapContainer
-                          {...({
-                            center: (merchantPos ?? [12.9716, 77.5946]) as [number, number],
-                            zoom: 13,
-                            style: { height: 256 },
-                            scrollWheelZoom: true,
-                          } as any)}
-                        >
+                        <MapContainer {...merchantMapProps}>
                           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                           <ClickMarker />
                         </MapContainer>
@@ -298,35 +444,13 @@ const AdminDashboard = () => {
                       <Input type="password" value={newStaffAccount.password} onChange={(e) => setNewStaffAccount({ ...newStaffAccount, password: e.target.value })} />
                     </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium">Location</label>
+                    <label className="mb-1 block text-sm font-medium">Selected Location</label>
                     <div className="flex items-center gap-2">
-                      <Input
-                        value={newStaffAccount.location}
-                        onChange={(e) => setNewStaffAccount({ ...newStaffAccount, location: e.target.value })}
-                        onBlur={(e) => {
-                          const parts = e.target.value.split(",").map((s) => s.trim());
-                          if (parts.length === 2) {
-                            const lt = parseFloat(parts[0]);
-                            const lg = parseFloat(parts[1]);
-                            if (!Number.isNaN(lt) && !Number.isNaN(lg)) {
-                              setStaffPos([lt, lg]);
-                              setNewStaffAccount((m) => ({ ...m, location: `${lt.toFixed(6)},${lg.toFixed(6)}` }));
-                            }
-                          }
-                        }}
-                        placeholder="lat, lng"
-                      />
+                      <Input value={newStaffAccount.location} readOnly />
                       <Button type="button" variant="outline" onClick={useMyLocationStaff}>Use My Location</Button>
                     </div>
                     <div className="mt-3 rounded-lg border">
-                      <MapContainer
-                        {...({
-                          center: (staffPos ?? [12.9716, 77.5946]) as [number, number],
-                          zoom: 13,
-                          style: { height: 256 },
-                          scrollWheelZoom: true,
-                        } as any)}
-                      >
+                      <MapContainer {...staffMapProps}>
                         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                         <ClickMarkerStaff />
                       </MapContainer>
@@ -363,44 +487,48 @@ const AdminDashboard = () => {
         </motion.div>
         )}
 
-        {tab === "dashboard" && (
-        <motion.div {...fadeUp} transition={{ delay: 0.4 }} className="rounded-xl border bg-card p-6 shadow-card">
-          <h2 className="font-heading text-xl font-bold">Pending Approvals</h2>
-          <p className="text-sm text-muted-foreground">Staff and merchant registrations awaiting your approval</p>
-          <div className="mt-4 space-y-3">
-            {pending.length === 0 && (
-              <div className="rounded-lg border p-4 text-sm text-muted-foreground">No pending approvals</div>
-            )}
-            {pending.map((p) => (
-              <div key={p.email} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="font-medium">{p.name}</div>
-                  <div className="text-sm text-muted-foreground">{p.email}</div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Badge variant={p.role === "Staff" ? "secondary" : "outline"}>{p.role}</Badge>
-                  <span className="text-xs text-muted-foreground">{p.date}</span>
-                  <Button
-                    size="sm"
-                    className="gradient-accent border-0 text-accent-foreground"
-                    onClick={() => { setApprovalStatus(p.email, "approved"); refresh(); }}
-                  >
-                    Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-destructive border-destructive/30"
-                    onClick={() => { setApprovalStatus(p.email, "rejected"); refresh(); }}
-                  >
-                    Reject
-                  </Button>
-                </div>
+        {tab === "merchants" && (
+        <motion.div {...fadeUp} transition={{ delay: 0.25 }} className="rounded-xl border bg-card p-6 shadow-card">
+          <h2 className="font-heading text-xl font-bold">Merchants</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {users.filter((u) => u.role === "merchant").map((m) => (
+              <div key={m.id} className="rounded-lg border p-4">
+                <div className="font-medium">{m.name || m.shopName || m.email}</div>
+                <div className="text-xs text-muted-foreground">{m.email}</div>
+                {m.location?.formatted && (
+                  <div className="text-xs text-muted-foreground mt-1">Location: {m.location.formatted}</div>
+                )}
               </div>
             ))}
+            {users.filter((u) => u.role === "merchant").length === 0 && (
+              <div className="text-sm text-muted-foreground">No merchants found</div>
+            )}
           </div>
         </motion.div>
         )}
+        {tab === "staff" && (
+        <motion.div {...fadeUp} transition={{ delay: 0.25 }} className="rounded-xl border bg-card p-6 shadow-card">
+          <h2 className="font-heading text-xl font-bold">Staff</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {users.filter((u) => u.role === "staff").map((s) => (
+              <div key={s.id} className="rounded-lg border p-4">
+                <div className="font-medium">{s.name || s.email}</div>
+                <div className="text-xs text-muted-foreground">{s.email}</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {s.staffOnline ? "Online" : "Offline"}
+                  {s.liveLocation?.lat !== undefined && s.liveLocation?.lng !== undefined
+                    ? ` • ${s.liveLocation.lat}, ${s.liveLocation.lng}`
+                    : ""}
+                </div>
+              </div>
+            ))}
+            {users.filter((u) => u.role === "staff").length === 0 && (
+              <div className="text-sm text-muted-foreground">No staff found</div>
+            )}
+          </div>
+        </motion.div>
+        )}
+
         {(tab === "dashboard" || tab === "settings") && (
         <motion.div {...fadeUp} transition={{ delay: 0.35 }} className="rounded-xl border bg-card p-6 shadow-card">
           <div className="flex items-center justify-between">
@@ -462,7 +590,7 @@ const AdminDashboard = () => {
                   <div className="text-sm text-muted-foreground">{s.desc}</div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-sm">Price: <span className="font-semibold">{s.price === 0 ? "Free" : `$${s.price}`}</span></span>
+                  <span className="text-sm">Price: <span className="font-semibold">{s.price === 0 ? "Free" : `₹${s.price}`}</span></span>
                   <Input
                     className="w-24"
                     type="number"
@@ -483,126 +611,485 @@ const AdminDashboard = () => {
         <motion.div {...fadeUp} transition={{ delay: 0.55 }} className="rounded-xl border bg-card p-6 shadow-card">
           <h2 className="font-heading text-xl font-bold">Recent Bookings</h2>
           <div className="mt-4 space-y-3">
-            {bookings.length === 0 && (
+            {loadingApiBookings && (
+              <div className="rounded-lg border p-4 text-sm text-muted-foreground">Loading recent bookings…</div>
+            )}
+            {!loadingApiBookings && apiBookings.length === 0 && (
               <div className="rounded-lg border p-4 text-sm text-muted-foreground">No bookings yet</div>
             )}
-            {bookings.map((b) => (
+            {[...apiBookings]
+              .sort((a, b) => {
+                const ta = a.lastUpdatedAt ? Date.parse(a.lastUpdatedAt) : 0;
+                const tb = b.lastUpdatedAt ? Date.parse(b.lastUpdatedAt) : 0;
+                if (ta !== tb) return tb - ta;
+                const da = a.date ? Date.parse(a.date) : 0;
+                const db = b.date ? Date.parse(b.date) : 0;
+                return db - da;
+              })
+              .slice(0, 20)
+              .map((b) => (
               <div key={b.id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="font-medium">{b.customerEmail}</div>
                   <div className="text-sm text-muted-foreground">{(b.vehicle === "bike" ? "Bike" : "Car")} — {b.service}</div>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="text-xs text-muted-foreground">{b.date} {b.time && `• ${b.time}`}</span>
-                  <Badge variant={b.status === "Upcoming" ? "default" : b.status === "Completed" ? "secondary" : "destructive"}>{b.status}</Badge>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Assign slot</span>
-                    <Select value={b.slot || ""} onValueChange={(v) => { assignBookingSlot(b.id, v); setBookings(listBookings()); }}>
-                      <SelectTrigger className="w-36"><SelectValue placeholder="Select slot" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="09:00 AM">09:00 AM</SelectItem>
-                        <SelectItem value="11:00 AM">11:00 AM</SelectItem>
-                        <SelectItem value="01:00 PM">01:00 PM</SelectItem>
-                        <SelectItem value="03:00 PM">03:00 PM</SelectItem>
-                        <SelectItem value="05:00 PM">05:00 PM</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Assign job</span>
-                    <Select
-                      value={jobs.find((j) => j.bookingId === b.id)?.staffId || ""}
-                      onValueChange={(v) => { assignJob(b.id, v); setJobs(listJobs()); }}
-                    >
-                      <SelectTrigger className="w-36"><SelectValue placeholder="Select staff" /></SelectTrigger>
-                      <SelectContent>
-                        {staff.filter((s) => s.role === "Staff" && s.active).map((m) => (
-                          <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                  <div className="text-xs text-muted-foreground">Reg: {b.registration || "-"}</div>
+                  {b.location && (
+                    <div className="text-xs text-muted-foreground">
+                      Location: {b.location.formatted ? b.location.formatted : (b.location.lat !== undefined && b.location.lng !== undefined ? `${b.location.lat}, ${b.location.lng}` : "-")}
+                    </div>
+                  )}
+                  {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
+                    <div className="mt-2">
+                      <div className="text-xs text-muted-foreground mb-1">Before Service</div>
+                      <div className="flex flex-wrap gap-2">
+                        {b.photosBefore.slice(0, 4).map((src, i) => (
+                          <Dialog key={`before-${i}`}>
+                            <DialogTrigger asChild>
+                              <img src={src} alt="Before" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
+                            </DialogTrigger>
+                            <DialogContent className="max-w-3xl p-0">
+                              <img src={src} alt="Before Full" className="w-full h-auto rounded" />
+                            </DialogContent>
+                          </Dialog>
                         ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                      </div>
+                    </div>
+                  )}
+                  {Array.isArray(b.photosAfter) && b.photosAfter.length > 0 && (
+                    <div className="mt-2">
+                      <div className="text-xs text-muted-foreground mb-1">After Service</div>
+                      <div className="flex flex-wrap gap-2">
+                        {b.photosAfter.slice(0, 4).map((src, i) => (
+                          <Dialog key={`after-${i}`}>
+                            <DialogTrigger asChild>
+                              <img src={src} alt="After" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
+                            </DialogTrigger>
+                            <DialogContent className="max-w-3xl p-0">
+                              <img src={src} alt="After Full" className="w-full h-auto rounded" />
+                            </DialogContent>
+                          </Dialog>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {Array.isArray(b.photosReturn) && b.photosReturn.length > 0 && (
+                    <div className="mt-2">
+                      <div className="text-xs text-muted-foreground mb-1">Return</div>
+                      <div className="flex flex-wrap gap-2">
+                        {b.photosReturn.slice(0, 4).map((src, i) => (
+                          <Dialog key={`ret-${i}`}>
+                            <DialogTrigger asChild>
+                              <img src={src} alt="Return" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
+                            </DialogTrigger>
+                            <DialogContent className="max-w-3xl p-0">
+                              <img src={src} alt="Return Full" className="w-full h-auto rounded" />
+                            </DialogContent>
+                          </Dialog>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {typeof b.estimateTotal === "number" && (
+                    <div className="text-xs text-muted-foreground">
+                      Estimate: ₹{(b.estimateLabour || 0)} + ₹{(b.estimateParts || 0)} + ₹{(b.estimateAdditional || 0)} = ₹{b.estimateTotal}
+                    </div>
+                  )}
+                  {b.lastUpdatedMessage && (
+                    <div className="text-xs text-muted-foreground">
+                      {(b.lastUpdatedByRole ? b.lastUpdatedByRole.charAt(0).toUpperCase() + b.lastUpdatedByRole.slice(1) : "System")} — {b.lastUpdatedMessage}
+                    </div>
+                  )}
+                  {(() => {
+                    const paid = Array.isArray(b.payments) ? b.payments.reduce((s, x) => s + (Number(x.amount || 0) || 0), 0) : 0;
+                    const bill = typeof b.billTotal === "number" ? b.billTotal : 0;
+                    if (!paid && !bill) return null;
+                    const due = Math.max(bill - paid, 0);
+                    return (
+                      <div className="text-xs text-muted-foreground">
+                        {`Paid: ₹${paid.toLocaleString("en-IN")}`} {bill ? `• Due: ₹${due.toLocaleString("en-IN")}` : ""}
+                      </div>
+                    );
+                  })()}
+                  {Array.isArray(b.payments) && b.payments.length > 0 && (
+                    <div className="mt-2">
+                      <div className="text-xs text-muted-foreground mb-1">Payments</div>
+                      <div className="flex flex-col gap-1">
+                        {b.payments.slice(-3).map((p, i) => (
+                          <div key={`pay-${i}`} className="text-xs">
+                            ₹{Number(p.amount || 0)} • {p.method || "-"} {p.byRole ? `• ${p.byRole}` : ""} {p.time ? `• ${new Date(p.time).toLocaleString()}` : ""}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-xs text-muted-foreground">{b.date} {b.time && `• ${b.time}`}</span>
+                    {b.dropAt && (
+                      <span className="text-xs text-muted-foreground">Dropped: {new Date(b.dropAt).toLocaleString()}</span>
+                    )}
+                  <Badge variant={String(b.status).toLowerCase() === "approved" ? "secondary" : String(b.status).toLowerCase() === "pending" ? "default" : String(b.status).toLowerCase() === "rejected" ? "destructive" : "outline"}>{b.status}</Badge>
+                  {(() => {
+                    const hasMedia =
+                      (Array.isArray(b.photosBefore) && b.photosBefore.length > 0) ||
+                      (Array.isArray(b.photosAfter) && b.photosAfter.length > 0) ||
+                      (Array.isArray(b.photosReturn) && b.photosReturn.length > 0);
+                    if (!hasMedia) return null;
+                    return (
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button size="sm" variant="outline">View Gallery</Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-4xl">
+                          <DialogHeader>
+                            <DialogTitle>Service Gallery</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4">
+                            {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
+                              <div>
+                                <div className="text-xs text-muted-foreground mb-2">Before Service</div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                  {b.photosBefore.map((src, i) => (
+                                    <img key={`adg-b-${i}`} src={src} alt="Before" className="w-full h-28 object-cover rounded border" />
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {Array.isArray(b.photosAfter) && b.photosAfter.length > 0 && (
+                              <div>
+                                <div className="text-xs text-muted-foreground mb-2">After Service</div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                  {b.photosAfter.map((src, i) => (
+                                    <img key={`adg-a-${i}`} src={src} alt="After" className="w-full h-28 object-cover rounded border" />
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {Array.isArray(b.photosReturn) && b.photosReturn.length > 0 && (
+                              <div>
+                                <div className="text-xs text-muted-foreground mb-2">Return</div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                  {b.photosReturn.map((src, i) => (
+                                    <img key={`adg-r-${i}`} src={src} alt="Return" className="w-full h-28 object-cover rounded border" />
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    );
+                  })()}
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Job status</span>
+                    <span className="text-xs text-muted-foreground">Assign merchant</span>
                     <Select
-                      value={jobs.find((j) => j.bookingId === b.id)?.status || "Assigned"}
-                      onValueChange={(v) => {
-                        const job = jobs.find((j) => j.bookingId === b.id);
-                        if (job) { setJobStatus(job.id, v as JobStatus); setJobs(listJobs()); }
+                      value={String(b.merchantId || "")}
+                      onValueChange={async (v) => {
+                        try {
+                          setApiBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, merchantId: v } : x)));
+                          await patchBookingApi(b.id, { action: "assign_merchant", merchantId: v });
+                          const next = await listApiBookings();
+                          setApiBookings(next);
+                        } catch (err) {
+                          const message = err instanceof Error ? err.message : String(err);
+                          toast({ title: "Failed to assign merchant", description: message, variant: "destructive" });
+                          const next = await listApiBookings();
+                          setApiBookings(next);
+                        }
                       }}
                     >
-                      <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="w-44"><SelectValue placeholder="Select merchant" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Assigned">Assigned</SelectItem>
-                        <SelectItem value="InProgress">InProgress</SelectItem>
-                        <SelectItem value="Done">Done</SelectItem>
+                        {users.filter((u) => u.role === "merchant").length === 0 ? (
+                          <SelectItem disabled value="_">No merchants</SelectItem>
+                        ) : (
+                          users.filter((u) => u.role === "merchant").map((m) => (
+                            <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Assign staff</span>
+                    <Select
+                      value={String(b.staffId || "")}
+                      onValueChange={async (v) => {
+                        try {
+                          setApiBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, staffId: v } : x)));
+                          await patchBookingApi(b.id, { action: "assign_staff", staffId: v });
+                          const next = await listApiBookings();
+                          setApiBookings(next);
+                          addNotificationForUser(v, "New Task", `Booking assigned: ${b.service}`);
+                          toast({ title: "Staff assigned", description: v });
+                        } catch (err) {
+                          const message = err instanceof Error ? err.message : String(err);
+                          toast({ title: "Failed to assign staff", description: message, variant: "destructive" });
+                          const next = await listApiBookings();
+                          setApiBookings(next);
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-44"><SelectValue placeholder="Select staff" /></SelectTrigger>
+                      <SelectContent>
+                        {users.filter((u) => u.role === "staff" && !!u.staffOnline).length === 0 ? (
+                          <SelectItem disabled value="_">No online staff</SelectItem>
+                        ) : (
+                          users.filter((u) => u.role === "staff" && !!u.staffOnline).map((s) => (
+                            <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">Update status</span>
-                    <Select value={b.status} onValueChange={(v) => { setBookingStatus(b.id, v as BookingStatus); setBookings(listBookings()); }}>
-                      <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                    <Select
+                      value={String(b.status || "")}
+                      onValueChange={async (v) => {
+                        try {
+                          await patchBookingApi(b.id, { action: "admin_update_status", status: v });
+                          const next = await listApiBookings();
+                          setApiBookings(next);
+                          toast({ title: "Status updated", description: `${b.customerEmail} • ${v}` });
+                        } catch (err) {
+                          const message = err instanceof Error ? err.message : String(err);
+                          toast({ title: "Failed to update status", description: message, variant: "destructive" });
+                          const next = await listApiBookings();
+                          setApiBookings(next);
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-44"><SelectValue placeholder="Select status" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Upcoming">Upcoming</SelectItem>
-                        <SelectItem value="Completed">Completed</SelectItem>
-                        <SelectItem value="Cancelled">Cancelled</SelectItem>
+                        <SelectItem value="in_progress">In Progress</SelectItem>
+                        <SelectItem value="pickup_done">Pickup Done</SelectItem>
+                        <SelectItem value="repair_done">Repair Done</SelectItem>
+                        <SelectItem value="awaiting_payment">Awaiting Payment</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                        <SelectItem value="paid">Paid</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Payment</span>
-                    <Select
-                      value={(() => {
-                        const p = payments.find((p) => p.bookingId === b.id);
-                        return p ? p.method || "" : "";
-                      })()}
-                      onValueChange={(v) => {
-                        const p = payments.find((p) => p.bookingId === b.id);
-                        const amount = Number(String(b.price || "0").replace(/[^0-9.]/g, ""));
-                        if (!p) { addPayment({ bookingId: b.id, amount, method: v }); }
-                        else { addPayment({ bookingId: b.id, amount, method: v }); }
-                        setPayments(listPayments());
-                      }}
-                    >
-                      <SelectTrigger className="w-36"><SelectValue placeholder="Method" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Cash">Cash</SelectItem>
-                        <SelectItem value="Card">Card</SelectItem>
-                        <SelectItem value="UPI">UPI</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        const p = payments.find((p) => p.bookingId === b.id);
-                        if (!p) {
-                          const amount = Number(String(b.price || "0").replace(/[^0-9.]/g, ""));
-                          addPayment({ bookingId: b.id, amount, method: "Cash" });
-                          const created = listPayments().find((x) => x.bookingId === b.id);
-                          if (created) setPaymentStatus(created.id, "Paid");
-                        } else {
-                          setPaymentStatus(p.id, "Paid");
-                        }
-                        setPayments(listPayments());
-                      }}
-                    >
-                      Mark Paid
-                    </Button>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button size="sm" variant="outline">Record Payment</Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Record Payment</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="mb-1 block text-sm font-medium">Amount</label>
+                            <Input id={`pay-amt-${b.id}`} type="number" placeholder="0" />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-sm font-medium">Method</label>
+                            <Input id={`pay-met-${b.id}`} placeholder="UPI / Cash / Card" />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-sm font-medium">Reference</label>
+                            <Input id={`pay-ref-${b.id}`} placeholder="Txn / UTR / last 4" />
+                          </div>
+                          <Button
+                            onClick={async () => {
+                              const amtEl = document.getElementById(`pay-amt-${b.id}`) as HTMLInputElement | null;
+                              const metEl = document.getElementById(`pay-met-${b.id}`) as HTMLInputElement | null;
+                              const refEl = document.getElementById(`pay-ref-${b.id}`) as HTMLInputElement | null;
+                              const amount = Number(amtEl?.value || 0);
+                              const method = metEl?.value || "";
+                              const reference = refEl?.value || "";
+                              if (!amount || amount <= 0) { toast({ title: "Amount required", variant: "destructive" }); return; }
+                              try {
+                                await patchBookingApi(b.id, { action: "add_payment", amount, method, reference });
+                                const next = await listApiBookings();
+                                setApiBookings(next);
+                                toast({ title: "Payment recorded", description: `${b.customerEmail} • ₹${amount}` });
+                              } catch (err) {
+                                const message = err instanceof Error ? err.message : String(err);
+                                toast({ title: "Failed to record", description: message, variant: "destructive" });
+                              }
+                            }}
+                            className="w-full gradient-accent border-0 text-accent-foreground"
+                          >
+                            Save
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button size="sm" variant="outline">Payment History</Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-2xl">
+                        <DialogHeader>
+                          <DialogTitle>Payment History</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-3">
+                          {Array.isArray(b.payments) && b.payments.length > 0 ? (
+                            <>
+                              <div className="rounded-md border">
+                                <div className="grid grid-cols-5 gap-2 p-2 text-xs font-medium text-muted-foreground">
+                                  <div>Amount</div>
+                                  <div>Method</div>
+                                  <div>Reference</div>
+                                  <div>By</div>
+                                  <div>Time</div>
+                                </div>
+                                <div className="divide-y">
+                                  {b.payments.map((p, i) => (
+                                    <div key={`ah-${i}`} className="grid grid-cols-5 gap-2 p-2 text-xs">
+                                      <div>₹{Number(p.amount || 0)}</div>
+                                      <div>{p.method || "-"}</div>
+                                      <div>{p.reference || "-"}</div>
+                                      <div>{p.byRole || "-"}</div>
+                                      <div>{p.time ? new Date(p.time).toLocaleString() : "-"}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="flex justify-end">
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    const rows = [["amount","method","reference","byRole","time"], ...(b.payments || []).map(p => [
+                                      String(p.amount ?? ""),
+                                      String(p.method ?? ""),
+                                      String(p.reference ?? ""),
+                                      String(p.byRole ?? ""),
+                                      p.time ? new Date(p.time).toISOString() : ""
+                                    ])];
+                                    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+                                    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement("a");
+                                    a.href = url;
+                                    a.download = `payments-${b.id}.csv`;
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                    URL.revokeObjectURL(url);
+                                  }}
+                                >
+                                  Export CSV
+                                </Button>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="rounded-lg border p-4 text-sm text-muted-foreground">No payments yet</div>
+                          )}
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                    {["paid", "delivered", "completed"].includes(String(b.status).toLowerCase()) ? (
+                      <Badge variant="secondary">PAID</Badge>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={async () => {
+                          try {
+                            await patchBookingApi(b.id, { action: "admin_update_status", status: "paid" });
+                            const next = await listApiBookings();
+                            setApiBookings(next);
+                            toast({ title: "Marked Paid", description: b.customerEmail });
+                          } catch (err) {
+                            const message = err instanceof Error ? err.message : String(err);
+                            toast({ title: "Failed to mark paid", description: message, variant: "destructive" });
+                            const next = await listApiBookings();
+                            setApiBookings(next);
+                          }
+                        }}
+                      >
+                        Mark Paid
+                      </Button>
+                    )}
                   </div>
-                  <Button
-                    size="sm"
-                    className="gradient-accent border-0 text-accent-foreground"
-                    onClick={() => {
-                      const amount = Number(String(b.price || "0").replace(/[^0-9.]/g, ""));
-                      const inv = generateInvoice({ bookingId: b.id, customerEmail: b.customerEmail, amount });
-                      setInvoices(listInvoices());
-                      toast({ title: "Invoice generated", description: `${inv.invoiceNo} • ${inv.customerEmail} • $${inv.amount}` });
-                    }}
-                  >
-                    Generate Invoice
-                  </Button>
+                  {String(b.status).toUpperCase() === "PENDING_ASSIGNMENT" ? (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        className="gradient-accent border-0 text-accent-foreground"
+                        onClick={async () => {
+                          if (!b.merchantId || !b.staffId) {
+                            toast({ title: "Select merchant and staff", description: "Assign both merchant and staff before approval", variant: "destructive" });
+                            return;
+                          }
+                          const ok = window.confirm(`Approve booking for ${b.customerEmail}?`);
+                          if (!ok) return;
+                          await patchBookingApi(b.id, { action: "approve" });
+                          const next = await listApiBookings();
+                          setApiBookings(next);
+                          addNotificationForUser(String(b.merchantId), "New Booking", `Assigned booking for ${b.customerEmail}`);
+                          toast({ title: "Approved", description: b.customerEmail });
+                        }}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-destructive border-destructive/30"
+                        onClick={async () => {
+                          await patchBookingApi(b.id, { action: "reject" });
+                          const next = await listApiBookings();
+                          setApiBookings(next);
+                          toast({ title: "Rejected", description: b.customerEmail });
+                        }}
+                      >
+                        Reject
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="gradient-accent border-0 text-accent-foreground"
+                        onClick={() => {
+                          const amount = Number(String(b.price || "0").replace(/[^0-9.]/g, ""));
+                          const inv = generateInvoice({ bookingId: b.id, customerEmail: b.customerEmail, amount });
+                          setInvoices(listInvoices());
+                          toast({ title: "Invoice generated", description: `${inv.invoiceNo} • ${inv.customerEmail} • ₹${inv.amount}` });
+                        }}
+                      >
+                        Generate Invoice
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={async () => {
+                          const ok = window.confirm(`Delete booking for ${b.customerEmail}? This cannot be undone.`);
+                          if (!ok) return;
+                          try {
+                            await deleteApiBooking(b.id);
+                            const next = await listApiBookings();
+                            setApiBookings(next);
+                            toast({ title: "Booking deleted", description: b.customerEmail });
+                          } catch (err) {
+                            const message = err instanceof Error ? err.message : String(err);
+                            toast({ title: "Delete failed", description: message, variant: "destructive" });
+                          }
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary">{String(b.status).toUpperCase()}</Badge>
+                      <Button
+                        size="sm"
+                        className="gradient-accent border-0 text-accent-foreground"
+                        onClick={() => {
+                          const amount = Number(String(b.price || "0").replace(/[^0-9.]/g, ""));
+                          const inv = generateInvoice({ bookingId: b.id, customerEmail: b.customerEmail, amount });
+                          setInvoices(listInvoices());
+                          toast({ title: "Invoice generated", description: `${inv.invoiceNo} • ${inv.customerEmail} • ₹${inv.amount}` });
+                        }}
+                      >
+                        Generate Invoice
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -667,63 +1154,13 @@ const AdminDashboard = () => {
           <div className="mt-4 space-y-3">
             {users.filter((u) => u.role === "merchant").length === 0 && <div className="rounded-lg border p-4 text-sm text-muted-foreground">No merchants</div>}
             {users.filter((u) => u.role === "merchant").map((m) => (
-              <div key={m.email} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="font-medium">{m.name}</div>
-                  <div className="text-sm text-muted-foreground">{m.email}</div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Badge variant="outline">Merchant</Badge>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={async () => {
-                      try {
-                        await deleteUserByAdmin(m.id);
-                        const u = await listUsersFromApi();
-                        setUsers(u);
-                        toast({ title: "Merchant removed", description: m.email });
-                      } catch (err) {
-                        const message = err instanceof Error ? err.message : String(err);
-                        toast({ title: "Failed to remove", description: message, variant: "destructive" });
-                      }
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              </div>
+              <MerchantRow key={m.email} merchant={m} onChanged={async () => { try { const u = await listUsersFromApi(); setUsers(u); } catch { void 0; } }} />
             ))}
           </div>
           <div className="mt-4 space-y-3">
             {users.filter((u) => u.role === "staff").length === 0 && <div className="rounded-lg border p-4 text-sm text-muted-foreground">No team members</div>}
             {users.filter((u) => u.role === "staff").map((m) => (
-              <div key={m.email} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="font-medium">{m.name}</div>
-                  <div className="text-sm text-muted-foreground">{m.email}</div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Badge variant="secondary">Staff</Badge>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={async () => {
-                      try {
-                        await deleteUserByAdmin(m.id);
-                        const u = await listUsersFromApi();
-                        setUsers(u);
-                        toast({ title: "Staff removed", description: m.email });
-                      } catch (err) {
-                        const message = err instanceof Error ? err.message : String(err);
-                        toast({ title: "Failed to remove", description: message, variant: "destructive" });
-                      }
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              </div>
+              <StaffRow key={m.email} staff={m} onChanged={async () => { try { const u = await listUsersFromApi(); setUsers(u); } catch { void 0; } }} />
             ))}
           </div>
         </motion.div>
@@ -764,7 +1201,84 @@ const AdminDashboard = () => {
 
         {(tab === "dashboard" || tab === "invoices") && (
         <motion.div {...fadeUp} transition={{ delay: 0.58 }} className="rounded-xl border bg-card p-6 shadow-card">
-          <h2 className="font-heading text-xl font-bold">Invoices</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-heading text-xl font-bold">Invoices</h2>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button size="sm" className="gradient-accent border-0 text-accent-foreground">Generate Invoice</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Generate Invoice</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">Booking</label>
+                    <Select
+                      value={newInvoice.bookingId}
+                      onValueChange={(val) => {
+                        const b = apiBookings.find((x) => x.id === val);
+                        setNewInvoice({
+                          bookingId: val,
+                          email: b?.customerEmail || newInvoice.email,
+                          amount: typeof b?.price === "number" ? b!.price! : newInvoice.amount,
+                        });
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select booking" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {apiBookings.map((b) => (
+                          <SelectItem key={b.id} value={b.id}>
+                            {b.customerEmail} — {b.service} {b.date ? `(${b.date})` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">Customer Email</label>
+                    <Input
+                      type="email"
+                      value={newInvoice.email}
+                      onChange={(e) => setNewInvoice({ ...newInvoice, email: e.target.value })}
+                      placeholder="customer@example.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">Amount</label>
+                    <Input
+                      type="number"
+                      value={String(newInvoice.amount || "")}
+                      onChange={(e) => setNewInvoice({ ...newInvoice, amount: Number(e.target.value || 0) })}
+                      placeholder="49"
+                    />
+                  </div>
+                  <Button
+                    disabled={savingInvoice || !newInvoice.bookingId || !newInvoice.email || !newInvoice.amount}
+                    onClick={() => {
+                      try {
+                        setSavingInvoice(true);
+                        generateInvoice({ bookingId: newInvoice.bookingId, customerEmail: newInvoice.email, amount: newInvoice.amount });
+                        setInvoices(listInvoices());
+                        setNewInvoice({ bookingId: "", email: "", amount: 0 });
+                        toast({ title: "Invoice generated" });
+                      } catch (err) {
+                        const message = err instanceof Error ? err.message : String(err);
+                        toast({ title: "Failed", description: message, variant: "destructive" });
+                      } finally {
+                        setSavingInvoice(false);
+                      }
+                    }}
+                    className="w-full gradient-accent border-0 text-accent-foreground"
+                  >
+                    {savingInvoice ? (<span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving...</span>) : "Save"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
           <div className="mt-4 space-y-3">
             {invoices.length === 0 && (
               <div className="rounded-lg border p-4 text-sm text-muted-foreground">No invoices</div>
@@ -773,10 +1287,11 @@ const AdminDashboard = () => {
               <div key={inv.id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="font-medium">{inv.invoiceNo}</div>
-                  <div className="text-sm text-muted-foreground">{inv.customerEmail} — ${inv.amount}</div>
+                  <div className="text-sm text-muted-foreground">{inv.customerEmail} — ₹{inv.amount}</div>
                 </div>
                 <div className="flex items-center gap-3">
                   <Badge variant={inv.status === "Paid" ? "secondary" : "outline"}>{inv.status}</Badge>
+                  <Button size="sm" variant="outline" onClick={() => downloadInvoice(inv)}>Download</Button>
                   {inv.status !== "Paid" && (
                     <Button size="sm" variant="outline" onClick={() => { markInvoicePaid(inv.id); setInvoices(listInvoices()); }}>Mark Paid</Button>
                   )}
@@ -804,35 +1319,82 @@ const AdminDashboard = () => {
                 <div className="flex items-center gap-3">
                   <Badge variant={r.role === "Staff" ? "secondary" : r.role === "Merchant" ? "outline" : "default"}>{r.role}</Badge>
                   <span className="text-xs text-muted-foreground">{r.date}</span>
+                  <Button size="sm" variant="outline" onClick={() => setOpenReg(r)}>View</Button>
+                  <Button size="sm" variant="destructive" onClick={() => removeRegistrationAndUser(r.email)}>Remove</Button>
                 </div>
               </div>
             ))}
           </div>
+          <Dialog open={!!openReg} onOpenChange={(v) => setOpenReg(v ? openReg : null)}>
+            <DialogTrigger asChild><span /></DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Registration Details</DialogTitle>
+              </DialogHeader>
+              {openReg ? (
+                <div className="space-y-2">
+                  <div className="text-sm"><span className="font-medium">Name:</span> {openReg.name}</div>
+                  <div className="text-sm"><span className="font-medium">Email:</span> {openReg.email}</div>
+                  <div className="text-sm"><span className="font-medium">Role:</span> {openReg.role}</div>
+                  <div className="text-sm"><span className="font-medium">Date:</span> {openReg.date}</div>
+                  <div className="text-sm"><span className="font-medium">Address:</span> {openReg.address || "-"}</div>
+                </div>
+              ) : null}
+            </DialogContent>
+          </Dialog>
         </motion.div>
         )}
 
-        {(tab === "dashboard" || tab === "approval-history") && (
-        <motion.div {...fadeUp} transition={{ delay: 0.6 }} className="rounded-xl border bg-card p-6 shadow-card">
-          <h2 className="font-heading text-xl font-bold">Approval History</h2>
-          <p className="text-sm text-muted-foreground">Records of approvals and rejections</p>
-          <div className="mt-4 space-y-3">
-            {approvalEvents.length === 0 && (
-              <div className="rounded-lg border p-4 text-sm text-muted-foreground">No approval actions yet</div>
-            )}
-            {approvalEvents.map((e, i) => (
-              <div key={`${e.email}-${i}`} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="font-medium">{e.email}</div>
-                  <div className="text-sm text-muted-foreground">{e.role}</div>
+        {tab === "merchant-map" && (
+          <motion.div {...fadeUp} transition={{ delay: 0.52 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <h2 className="font-heading text-xl font-bold">Merchant Locations</h2>
+            <div className="mt-4">
+              {users.filter((u) => u.role === "merchant" && u.location?.lat !== undefined && u.location?.lng !== undefined).length === 0 ? (
+                <div className="rounded-lg border p-4 text-sm text-muted-foreground">No merchants with saved location</div>
+              ) : (
+                <div className="rounded-lg border">
+                  <MapContainer center={[
+                    users.find((u) => u.role === "merchant" && u.location?.lat !== undefined && u.location?.lng !== undefined)?.location?.lat || 20,
+                    users.find((u) => u.role === "merchant" && u.location?.lat !== undefined && u.location?.lng !== undefined)?.location?.lng || 78
+                  ]} zoom={12} style={{ height: 360 }}>
+                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    {users.filter((u) => u.role === "merchant" && u.location?.lat !== undefined && u.location?.lng !== undefined).map((m) => (
+                      <Marker key={m.id} position={[m.location!.lat as number, m.location!.lng as number]} />
+                    ))}
+                  </MapContainer>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    {users.filter((u) => u.role === "merchant").length} merchants • {users.filter((u) => u.role === "merchant" && u.location?.lat !== undefined && u.location?.lng !== undefined).length} with location
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <Badge variant={e.status === "approved" ? "secondary" : "destructive"}>{e.status}</Badge>
-                  <span className="text-xs text-muted-foreground">{e.date}</span>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {tab === "staff-live-map" && (
+          <motion.div {...fadeUp} transition={{ delay: 0.55 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <h2 className="font-heading text-xl font-bold">Staff Live Map</h2>
+            <div className="mt-4">
+              {users.filter((u) => u.role === "staff" && u.staffOnline && u.liveLocation?.lat !== undefined && u.liveLocation?.lng !== undefined).length === 0 ? (
+                <div className="rounded-lg border p-4 text-sm text-muted-foreground">No online staff with live location</div>
+              ) : (
+                <div className="rounded-lg border">
+                  <MapContainer center={[
+                    users.find((u) => u.role === "staff" && u.staffOnline && u.liveLocation?.lat !== undefined && u.liveLocation?.lng !== undefined)?.liveLocation?.lat || 20,
+                    users.find((u) => u.role === "staff" && u.staffOnline && u.liveLocation?.lat !== undefined && u.liveLocation?.lng !== undefined)?.liveLocation?.lng || 78
+                  ]} zoom={12} style={{ height: 360 }}>
+                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    {users.filter((u) => u.role === "staff" && u.staffOnline && u.liveLocation?.lat !== undefined && u.liveLocation?.lng !== undefined).map((s) => (
+                      <Marker key={s.id} position={[s.liveLocation!.lat as number, s.liveLocation!.lng as number]} />
+                    ))}
+                  </MapContainer>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    {users.filter((u) => u.role === "staff" && u.staffOnline).length} online • {users.filter((u) => u.role === "staff" && u.staffOnline && u.liveLocation?.lat !== undefined && u.liveLocation?.lng !== undefined).length} sharing location
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </motion.div>
+              )}
+            </div>
+          </motion.div>
         )}
       </div>
     </DashboardLayout>
@@ -840,3 +1402,130 @@ const AdminDashboard = () => {
 };
 
 export default AdminDashboard;
+
+function MerchantRow({ merchant, onChanged }: { merchant: ApiUser; onChanged: () => void | Promise<void> }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<[number, number] | null>(() => {
+    const lat = merchant.location?.lat; const lng = merchant.location?.lng;
+    return typeof lat === "number" && typeof lng === "number" ? [lat, lng] : null;
+  });
+  const [saving, setSaving] = useState(false);
+  const center: [number, number] = (pos ?? [12.9716, 77.5946]) as [number, number];
+  const mapProps: MapContainerProps = { center, zoom: 14, style: { height: 256 }, scrollWheelZoom: true };
+  function Clicker() {
+    useMapEvents({
+      click(e) {
+        setPos([e.latlng.lat, e.latlng.lng]);
+      },
+    });
+    return pos ? <Marker position={pos} /> : null;
+  }
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <div className="font-medium">{merchant.name}</div>
+        <div className="text-sm text-muted-foreground">{merchant.email}</div>
+        <div className="text-xs text-muted-foreground">
+          {merchant.location?.lat !== undefined && merchant.location?.lng !== undefined
+            ? `${merchant.location.lat},${merchant.location.lng}`
+            : "No location"} 
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <Badge variant="outline">Merchant</Badge>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="outline">Edit Location</Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Merchant Location</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="rounded-lg border">
+                <MapContainer {...mapProps}>
+                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                  <Clicker />
+                </MapContainer>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {pos ? `${pos[0].toFixed(8)}, ${pos[1].toFixed(8)}` : "Click on the map to set location"}
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  disabled={!pos || saving}
+                  onClick={async () => {
+                    if (!pos) return;
+                    try {
+                      setSaving(true);
+                      await updateUserLocationByAdmin(merchant.id, pos[0], pos[1]);
+                      setOpen(false);
+                      await onChanged();
+                      toast({ title: "Location updated", description: merchant.email });
+                    } catch (err) {
+                      const message = err instanceof Error ? err.message : String(err);
+                      toast({ title: "Failed to update", description: message, variant: "destructive" });
+                    } finally {
+                      setSaving(false);
+                    }
+                  }}
+                  className="gradient-accent border-0 text-accent-foreground"
+                >
+                  {saving ? <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving</span> : "Save"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={async () => {
+            try {
+              await deleteUserByAdmin(merchant.id);
+              await onChanged();
+              toast({ title: "Merchant removed", description: merchant.email });
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              toast({ title: "Failed to remove", description: message, variant: "destructive" });
+            }
+          }}
+        >
+          Remove
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function StaffRow({ staff, onChanged }: { staff: ApiUser; onChanged: () => void | Promise<void> }) {
+  const { toast } = useToast();
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <div className="font-medium">{staff.name}</div>
+        <div className="text-sm text-muted-foreground">{staff.email}</div>
+      </div>
+      <div className="flex items-center gap-3">
+        <Badge variant="secondary">Staff</Badge>
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={async () => {
+            try {
+              await deleteUserByAdmin(staff.id);
+              await onChanged();
+              toast({ title: "Staff removed", description: staff.email });
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              toast({ title: "Failed to remove", description: message, variant: "destructive" });
+            }
+          }}
+        >
+          Remove
+        </Button>
+      </div>
+    </div>
+  );
+}

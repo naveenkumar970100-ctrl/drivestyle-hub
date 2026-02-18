@@ -14,7 +14,7 @@ const BikeServices = () => {
     icon: iconMap[s.title.split(" ")[0]] || Wrench,
     title: s.title,
     desc: s.desc,
-    price: s.price === 0 ? "Free" : `From $${s.price}`,
+    price: s.price === 0 ? "Free" : `From ₹${Number(s.price).toLocaleString("en-IN")}`,
   }));
 
   return (
