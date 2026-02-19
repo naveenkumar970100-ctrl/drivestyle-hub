@@ -1,7 +1,7 @@
 const express = require('express');
 const { auth } = require('../middleware/auth');
 const { allowRoles } = require('../middleware/roles');
-const { getMe, listUsers, createUserByAdmin, deleteUserByAdmin, updateUserLocationByAdmin, lookupVehicle, createVehicle, listVehicles, setStaffOnline, setMyLocation, updateMeProfile } = require('../controllers/userController');
+const { getMe, listUsers, createUserByAdmin, deleteUserByAdmin, updateUserLocationByAdmin, lookupVehicle, createVehicle, listVehicles, deleteVehicle, setStaffOnline, setMyLocation, updateMeProfile } = require('../controllers/userController');
 
 const router = express.Router();
 
@@ -22,12 +22,14 @@ if (process.env.NODE_ENV !== 'production') {
   router.post('/create', createUserByAdmin);
   router.get('/vehicles', listVehicles);
   router.post('/vehicles', createVehicle);
+  router.delete('/vehicles/:id', deleteVehicle);
   router.patch('/:id/location', updateUserLocationByAdmin);
   router.delete('/:id', deleteUserByAdmin);
 } else {
   router.post('/admin/create', auth, allowRoles('admin'), createUserByAdmin);
   router.get('/vehicles', auth, allowRoles('customer'), listVehicles);
   router.post('/vehicles', auth, allowRoles('customer'), createVehicle);
+  router.delete('/vehicles/:id', auth, allowRoles('customer'), deleteVehicle);
   router.patch('/:id/location', auth, allowRoles('admin'), updateUserLocationByAdmin);
   router.delete('/:id', auth, allowRoles('admin'), deleteUserByAdmin);
 }

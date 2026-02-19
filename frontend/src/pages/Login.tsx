@@ -13,12 +13,14 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
   const [search] = useSearchParams();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
     try {
       const endpoints = [
         "/api/auth/login",
@@ -82,6 +84,8 @@ const Login = () => {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Network error";
       toast({ title: "Login failed", description: message, variant: "destructive" });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -117,7 +121,9 @@ const Login = () => {
                 </button>
               </div>
             </div>
-            <Button type="submit" className="w-full gradient-accent border-0 text-accent-foreground">Login</Button>
+            <Button type="submit" disabled={loading} className="w-full gradient-accent border-0 text-accent-foreground">
+              {loading ? "Logging in..." : "Login"}
+            </Button>
           </form>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">

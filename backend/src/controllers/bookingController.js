@@ -28,19 +28,47 @@ const createBooking = async (req, res, next) => {
 
 const listBookings = async (req, res, next) => {
   try {
-    const roleStr = req.user ? String(req.user.role || 'customer').toLowerCase() : 'admin';
+    const roleStr = req.user
+      ? String(req.user.role || 'customer').toLowerCase()
+      : (req.query.role || 'admin').toString().toLowerCase();
     const email = (req.query.email || '').toString().toLowerCase();
     let filter = {};
-    if (roleStr === 'customer') {
-      filter = { customerEmail: email || req.user?.email || '' };
+    if (roleStr === 'customer' && email) {
+      filter = { customerEmail: email };
     } else if (roleStr === 'merchant') {
-      filter = { merchantId: req.user?.id };
+      let merchantId = req.user?.id;
+      if (!merchantId && email) {
+        const u = await User.findOne({ email }).select('_id role').lean();
+        if (u && String(u.role || '').toLowerCase() === 'merchant') {
+          merchantId = String(u._id);
+        }
+      }
+      if (merchantId) {
+        filter = { merchantId };
+      }
     } else if (roleStr === 'staff') {
-      filter = { staffId: req.user?.id };
+      let staffId = req.user?.id;
+      if (!staffId && email) {
+        const u = await User.findOne({ email }).select('_id role').lean();
+        if (u && String(u.role || '').toLowerCase() === 'staff') {
+          staffId = String(u._id);
+        }
+      }
+      if (staffId) {
+        filter = { staffId };
+      }
     } else {
       filter = {};
     }
-    const docs = await Booking.find(filter).sort({ createdAt: -1 });
+    let query = Booking.find(filter).sort({ createdAt: -1 });
+    const limitRaw = req.query.limit;
+    if (typeof limitRaw === 'string' && limitRaw.trim() !== '') {
+      const parsed = parseInt(limitRaw, 10);
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        query = query.limit(Math.min(parsed, 200));
+      }
+    }
+    const docs = await query.lean();
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');

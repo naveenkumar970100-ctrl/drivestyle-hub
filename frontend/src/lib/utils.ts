@@ -288,28 +288,114 @@ export async function createAdminUser(input: CreateStaffInput | CreateMerchantIn
   throw new Error(lastError || "Failed to create user");
 }
 
+let usersCacheValue: ApiUser[] | null = null;
+let usersCacheTime = 0;
+let usersCachePromise: Promise<ApiUser[]> | null = null;
+let currentUserCacheValue: ApiUser | null = null;
+let currentUserCacheTime = 0;
+let currentUserCachePromise: Promise<ApiUser | null> | null = null;
+const USERS_TTL_MS = 30000;
+const CURRENT_USER_TTL_MS = 30000;
+
 export async function listUsersFromApi(): Promise<ApiUser[]> {
+  const now = Date.now();
+  if (usersCacheValue && now - usersCacheTime < USERS_TTL_MS) {
+    return usersCacheValue;
+  }
+  if (usersCachePromise) {
+    return usersCachePromise;
+  }
   const session = getAuth();
   const endpoints = [
     "/api/users",
     "http://localhost:5000/api/users",
   ];
   let lastErr = "Failed to fetch users";
-  for (const url of endpoints) {
-    try {
-      const res = await apiFetch(url);
-      let data: unknown = null;
-      let parsed = true;
+  const task = (async () => {
+    for (const url of endpoints) {
       try {
-        data = await res.json();
-      } catch {
-        parsed = false;
+        const res = await apiFetch(url);
+        let data: unknown = null;
+        let parsed = true;
+        try {
+          data = await res.json();
+        } catch {
+          parsed = false;
+        }
+        const obj = data as { users?: unknown };
+        if (res.ok && obj && Array.isArray(obj.users)) {
+          const arr = obj.users as unknown[];
+          const mapped = arr.map((u) => {
+            const r = u as Record<string, unknown>;
+            return {
+              id: String((r.id ?? r._id ?? "")),
+              name: String((r.name ?? "")),
+              email: String((r.email ?? "")),
+              role: String((r.role ?? "customer")).toLowerCase() as ApiUser["role"],
+              phone: r.phone as string | undefined,
+              shopName: r.shopName as string | undefined,
+              staffRole: r.staffRole as string | undefined,
+              location: r.location as { formatted?: string; lat?: number; lng?: number } | undefined,
+              staffOnline: typeof r.staffOnline === "boolean" ? (r.staffOnline as boolean) : undefined,
+              liveLocation: r.liveLocation && typeof r.liveLocation === "object"
+                ? {
+                    lat: (r.liveLocation as Record<string, unknown>).lat as number | undefined,
+                    lng: (r.liveLocation as Record<string, unknown>).lng as number | undefined,
+                    updatedAt: (r.liveLocation as Record<string, unknown>).updatedAt ? String((r.liveLocation as Record<string, unknown>).updatedAt) : undefined,
+                  }
+                : undefined,
+            };
+          });
+          return mapped;
+        }
+        lastErr =
+          (data && typeof data.message === "string" && data.message) ||
+          `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : "Network error";
       }
-      const obj = data as { users?: unknown };
-      if (res.ok && obj && Array.isArray(obj.users)) {
-        const arr = obj.users as unknown[];
-        return arr.map((u) => {
-          const r = u as Record<string, unknown>;
+    }
+    throw new Error(lastErr);
+  })();
+  usersCachePromise = task;
+  try {
+    const result = await task;
+    usersCacheValue = result;
+    usersCacheTime = Date.now();
+    usersCachePromise = null;
+    return result;
+  } catch (e) {
+    usersCachePromise = null;
+    throw e;
+  }
+}
+
+export async function getCurrentUserFromApi(): Promise<ApiUser | null> {
+  const now = Date.now();
+  if (currentUserCacheValue && now - currentUserCacheTime < CURRENT_USER_TTL_MS) {
+    return currentUserCacheValue;
+  }
+  if (currentUserCachePromise) {
+    return currentUserCachePromise;
+  }
+  const endpoints = [
+    "/api/users/me",
+    "http://localhost:5000/api/users/me",
+  ];
+  const task = (async () => {
+    for (const url of endpoints) {
+      try {
+        const res = await apiFetch(url);
+        let data: unknown = null;
+        let parsed = true;
+        try {
+          data = await res.json();
+        } catch {
+          parsed = false;
+        }
+        const obj = data as { user?: unknown };
+        if (res.ok && obj && obj.user && typeof obj.user === "object") {
+          const r = obj.user as Record<string, unknown>;
           return {
             id: String((r.id ?? r._id ?? "")),
             name: String((r.name ?? "")),
@@ -328,64 +414,28 @@ export async function listUsersFromApi(): Promise<ApiUser[]> {
                 }
               : undefined,
           };
-        });
+        }
+        if (!res.ok && parsed && typeof (data as { message?: unknown }).message === "string") {
+          const msg = (data as { message: string }).message;
+          throw new Error(msg || "Failed to fetch current user");
+        }
+      } catch (_e) {
+        /* ignore and try next endpoint */
       }
-      lastErr =
-        (data && typeof data.message === "string" && data.message) ||
-        `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
-    } catch (e) {
-      lastErr = e instanceof Error ? e.message : "Network error";
     }
+    return null;
+  })();
+  currentUserCachePromise = task;
+  try {
+    const result = await task;
+    currentUserCacheValue = result;
+    currentUserCacheTime = Date.now();
+    currentUserCachePromise = null;
+    return result;
+  } catch (e) {
+    currentUserCachePromise = null;
+    throw e;
   }
-  throw new Error(lastErr);
-}
-
-export async function getCurrentUserFromApi(): Promise<ApiUser | null> {
-  const endpoints = [
-    "/api/users/me",
-    "http://localhost:5000/api/users/me",
-  ];
-  for (const url of endpoints) {
-    try {
-      const res = await apiFetch(url);
-      let data: unknown = null;
-      let parsed = true;
-      try {
-        data = await res.json();
-      } catch {
-        parsed = false;
-      }
-      const obj = data as { user?: unknown };
-      if (res.ok && obj && obj.user && typeof obj.user === "object") {
-        const r = obj.user as Record<string, unknown>;
-        return {
-          id: String((r.id ?? r._id ?? "")),
-          name: String((r.name ?? "")),
-          email: String((r.email ?? "")),
-          role: String((r.role ?? "customer")).toLowerCase() as ApiUser["role"],
-          phone: r.phone as string | undefined,
-          shopName: r.shopName as string | undefined,
-          staffRole: r.staffRole as string | undefined,
-          location: r.location as { formatted?: string; lat?: number; lng?: number } | undefined,
-          staffOnline: typeof r.staffOnline === "boolean" ? (r.staffOnline as boolean) : undefined,
-          liveLocation: r.liveLocation && typeof r.liveLocation === "object"
-            ? {
-                lat: (r.liveLocation as Record<string, unknown>).lat as number | undefined,
-                lng: (r.liveLocation as Record<string, unknown>).lng as number | undefined,
-                updatedAt: (r.liveLocation as Record<string, unknown>).updatedAt ? String((r.liveLocation as Record<string, unknown>).updatedAt) : undefined,
-              }
-            : undefined,
-        };
-      }
-      if (!res.ok && parsed && typeof (data as { message?: unknown }).message === "string") {
-        const msg = (data as { message: string }).message;
-        throw new Error(msg || "Failed to fetch current user");
-      }
-    } catch (_e) {
-      // fall through to next endpoint
-    }
-  }
-  return null;
 }
 
 export async function deleteUserByAdmin(id: string): Promise<{ ok: boolean }> {
@@ -555,148 +605,184 @@ export async function createBookingApi(input: { customerEmail: string; customerP
   throw new Error(lastErr);
 }
 
-export async function listApiBookings(params?: { email?: string }): Promise<ApiBooking[]> {
+type BookingsCacheEntry = { key: string; at: number; value: ApiBooking[] };
+let bookingsCache: BookingsCacheEntry | null = null;
+let bookingsCachePromise: { key: string; promise: Promise<ApiBooking[]> } | null = null;
+const BOOKINGS_TTL_MS = 5000;
+
+export async function listApiBookings(params?: { email?: string; limit?: number }): Promise<ApiBooking[]> {
   const qs = new URLSearchParams();
-  if (params?.email) qs.set("email", params.email);
+  const session = getAuth();
+  const email = params?.email || session?.email;
+  if (email) qs.set("email", email);
+  if (session?.role) qs.set("role", session.role);
+  const lim = params?.limit;
+  if (typeof lim === "number" && Number.isFinite(lim) && lim > 0) {
+    qs.set("limit", String(Math.min(Math.floor(lim), 200)));
+  } else if (session?.role === "Admin") {
+    qs.set("limit", "100");
+  }
+  const suffix = qs.toString();
+  const key = suffix || "all";
+  const now = Date.now();
+  if (bookingsCache && bookingsCache.key === key && now - bookingsCache.at < BOOKINGS_TTL_MS) {
+    return bookingsCache.value;
+  }
+  if (bookingsCachePromise && bookingsCachePromise.key === key) {
+    return bookingsCachePromise.promise;
+  }
   const endpoints = [
-    `/api/bookings?${qs.toString()}`,
-    `http://localhost:5000/api/bookings?${qs.toString()}`,
+    `/api/bookings${suffix ? `?${suffix}` : ""}`,
+    `http://localhost:5000/api/bookings${suffix ? `?${suffix}` : ""}`,
   ];
   let lastErr = "Failed to fetch bookings";
-  for (const url of endpoints) {
-    try {
-      const res = await apiFetch(url);
-      let data: unknown = null;
-      let parsed = true;
+  const task = (async () => {
+    for (const url of endpoints) {
       try {
-        data = await res.json();
-      } catch {
-        parsed = false;
-      }
-      const obj = data as { bookings?: unknown };
-      if (res.ok && obj && Array.isArray(obj.bookings)) {
-        const arr = obj.bookings as unknown[];
-        return arr.map((b) => {
-          const r = b as Record<string, unknown>;
-          const vehicleStr = String(r.vehicle ?? "car");
-          const merchantVal = r.merchantId as unknown;
-          const staffVal = r.staffId as unknown;
-          const merchantId =
-            typeof merchantVal === "string"
-              ? merchantVal
-              : merchantVal && typeof (merchantVal as { toString?: () => string }).toString === "function"
-                ? String((merchantVal as { toString: () => string }).toString())
-                : (merchantVal && typeof (merchantVal as Record<string, unknown>)._id === "string"
-                    ? ((merchantVal as Record<string, unknown>)._id as string)
-                    : undefined);
-          const staffId =
-            typeof staffVal === "string"
-              ? staffVal
-              : staffVal && typeof (staffVal as { toString?: () => string }).toString === "function"
-                ? String((staffVal as { toString: () => string }).toString())
-                : (staffVal && typeof (staffVal as Record<string, unknown>)._id === "string"
-                    ? ((staffVal as Record<string, unknown>)._id as string)
-                    : undefined);
-          const payments = Array.isArray((r as Record<string, unknown>).payments)
-            ? ((r as Record<string, unknown>).payments as unknown[]).map((p) => {
-                const q = p as Record<string, unknown>;
-                return {
-                  amount: typeof q.amount === "number" ? (q.amount as number) : undefined,
-                  method: typeof q.method === "string" ? (q.method as string) : undefined,
-                  reference: typeof q.reference === "string" ? (q.reference as string) : undefined,
-                  byRole: typeof q.byRole === "string" ? (q.byRole as string) : undefined,
-                  time: q.time ? String(q.time) : undefined,
-                };
-              })
-            : undefined;
-          return {
-            id: String((r.id ?? r._id ?? "")),
-            customerEmail: String((r.customerEmail ?? "")),
-            customerPhone: r.customerPhone as string | undefined,
-            vehicle: (vehicleStr === "bike" ? "bike" : "car") as "car" | "bike",
-            service: String((r.service ?? "")),
-            location: r.location as { formatted?: string; lat?: number; lng?: number } | undefined,
-            date: r.date as string | undefined,
-            time: r.time as string | undefined,
+        const res = await apiFetch(url);
+        let data: unknown = null;
+        let parsed = true;
+        try {
+          data = await res.json();
+        } catch {
+          parsed = false;
+        }
+        const obj = data as { bookings?: unknown };
+        if (res.ok && obj && Array.isArray(obj.bookings)) {
+          const arr = obj.bookings as unknown[];
+          return arr.map((b) => {
+            const r = b as Record<string, unknown>;
+            const vehicleStr = String(r.vehicle ?? "car");
+            const merchantVal = r.merchantId as unknown;
+            const staffVal = r.staffId as unknown;
+            const merchantId =
+              typeof merchantVal === "string"
+                ? merchantVal
+                : merchantVal && typeof (merchantVal as { toString?: () => string }).toString === "function"
+                  ? String((merchantVal as { toString: () => string }).toString())
+                  : (merchantVal && typeof (merchantVal as Record<string, unknown>)._id === "string"
+                      ? ((merchantVal as Record<string, unknown>)._id as string)
+                      : undefined);
+            const staffId =
+              typeof staffVal === "string"
+                ? staffVal
+                : staffVal && typeof (staffVal as { toString?: () => string }).toString === "function"
+                  ? String((staffVal as { toString: () => string }).toString())
+                  : (staffVal && typeof (staffVal as Record<string, unknown>)._id === "string"
+                      ? ((staffVal as Record<string, unknown>)._id as string)
+                      : undefined);
+            const payments = Array.isArray((r as Record<string, unknown>).payments)
+              ? ((r as Record<string, unknown>).payments as unknown[]).map((p) => {
+                  const q = p as Record<string, unknown>;
+                  return {
+                    amount: typeof q.amount === "number" ? (q.amount as number) : undefined,
+                    method: typeof q.method === "string" ? (q.method as string) : undefined,
+                    reference: typeof q.reference === "string" ? (q.reference as string) : undefined,
+                    byRole: typeof q.byRole === "string" ? (q.byRole as string) : undefined,
+                    time: q.time ? String(q.time) : undefined,
+                  };
+                })
+              : undefined;
+            return {
+              id: String((r.id ?? r._id ?? "")),
+              customerEmail: String((r.customerEmail ?? "")),
+              customerPhone: r.customerPhone as string | undefined,
+              vehicle: (vehicleStr === "bike" ? "bike" : "car") as "car" | "bike",
+              service: String((r.service ?? "")),
+              location: r.location as { formatted?: string; lat?: number; lng?: number } | undefined,
+              date: r.date as string | undefined,
+              time: r.time as string | undefined,
               registration: r.registration as string | undefined,
-            status: String((r.status ?? "")),
-            merchantId,
-            staffId,
-            repairNotes: r.repairNotes as string | undefined,
-            photosBefore: r.photosBefore as string[] | undefined,
-            photosAfter: r.photosAfter as string[] | undefined,
-            photosReturn: (r as Record<string, unknown>).photosReturn as string[] | undefined,
-            price: typeof r.price === "number" ? (r.price as number) : undefined,
-            billTotal: ((): number | undefined => {
-              const v = (r as Record<string, unknown>).billTotal;
-              return typeof v === "number" ? v : undefined;
-            })(),
-            dropAt: ((): string | undefined => {
-              const v = (r as Record<string, unknown>).dropAt;
-              return v ? String(v) : undefined;
-            })(),
-            dropByStaffId: ((): string | undefined => {
-              const v = (r as Record<string, unknown>).dropByStaffId;
-              if (typeof v === "string") return v;
-              if (v && typeof (v as { toString?: () => string }).toString === "function") {
-                return String((v as { toString: () => string }).toString());
-              }
-              if (v && typeof (v as Record<string, unknown>)._id === "string") {
-                return (v as Record<string, unknown>)._id as string;
-              }
-              return undefined;
-            })(),
-            estimateLabour: ((): number | undefined => {
-              const v = (r as Record<string, unknown>).estimateLabour ?? (r as Record<string, unknown>).labour_cost;
-              return typeof v === "number" ? v : undefined;
-            })(),
-            estimateParts: ((): number | undefined => {
-              const v = (r as Record<string, unknown>).estimateParts ?? (r as Record<string, unknown>).parts_cost;
-              return typeof v === "number" ? v : undefined;
-            })(),
-            estimateAdditional: ((): number | undefined => {
-              const v = (r as Record<string, unknown>).estimateAdditional ?? (r as Record<string, unknown>).additional_work;
-              return typeof v === "number" ? v : undefined;
-            })(),
-            estimateTotal: ((): number | undefined => {
-              const v = (r as Record<string, unknown>).estimateTotal;
-              if (typeof v === "number") return v;
-              const l = (r as Record<string, unknown>).labour_cost;
-              const p = (r as Record<string, unknown>).parts_cost;
-              const a = (r as Record<string, unknown>).additional_work;
-              const sum = [l, p, a].map((x) => (typeof x === "number" ? x : 0)).reduce((s, n) => s + n, 0);
-              return sum > 0 ? sum : undefined;
-            })(),
-            ratingValue: ((): number | undefined => {
-              const v = (r as Record<string, unknown>).ratingValue;
-              return typeof v === "number" ? v : undefined;
-            })(),
-            ratingComment: ((): string | undefined => {
-              const v = (r as Record<string, unknown>).ratingComment;
-              return typeof v === "string" ? v : undefined;
-            })(),
-            lastUpdatedByRole: typeof r.lastUpdatedByRole === "string" ? (r.lastUpdatedByRole as string) : undefined,
-            lastUpdatedMessage: typeof r.lastUpdatedMessage === "string" ? (r.lastUpdatedMessage as string) : undefined,
-            lastUpdatedAt: r.lastUpdatedAt ? String(r.lastUpdatedAt) : undefined,
-            staffAcceptanceStatus:
-              typeof r.staffAcceptanceStatus === "string" &&
-              (["none", "pending", "accepted", "declined"] as const).includes(
-                String(r.staffAcceptanceStatus) as "none" | "pending" | "accepted" | "declined"
-              )
-                ? (String(r.staffAcceptanceStatus) as "none" | "pending" | "accepted" | "declined")
-                : undefined,
-            payments,
-          };
-        });
+              status: String((r.status ?? "")),
+              merchantId,
+              staffId,
+              repairNotes: r.repairNotes as string | undefined,
+              photosBefore: r.photosBefore as string[] | undefined,
+              photosAfter: r.photosAfter as string[] | undefined,
+              photosReturn: (r as Record<string, unknown>).photosReturn as string[] | undefined,
+              price: typeof r.price === "number" ? (r.price as number) : undefined,
+              billTotal: ((): number | undefined => {
+                const v = (r as Record<string, unknown>).billTotal;
+                return typeof v === "number" ? v : undefined;
+              })(),
+              dropAt: ((): string | undefined => {
+                const v = (r as Record<string, unknown>).dropAt;
+                return v ? String(v) : undefined;
+              })(),
+              dropByStaffId: ((): string | undefined => {
+                const v = (r as Record<string, unknown>).dropByStaffId;
+                if (typeof v === "string") return v;
+                if (v && typeof (v as { toString?: () => string }).toString === "function") {
+                  return String((v as { toString: () => string }).toString());
+                }
+                if (v && typeof (v as Record<string, unknown>)._id === "string") {
+                  return (v as Record<string, unknown>)._id as string;
+                }
+                return undefined;
+              })(),
+              estimateLabour: ((): number | undefined => {
+                const v = (r as Record<string, unknown>).estimateLabour ?? (r as Record<string, unknown>).labour_cost;
+                return typeof v === "number" ? v : undefined;
+              })(),
+              estimateParts: ((): number | undefined => {
+                const v = (r as Record<string, unknown>).estimateParts ?? (r as Record<string, unknown>).parts_cost;
+                return typeof v === "number" ? v : undefined;
+              })(),
+              estimateAdditional: ((): number | undefined => {
+                const v = (r as Record<string, unknown>).estimateAdditional ?? (r as Record<string, unknown>).additional_work;
+                return typeof v === "number" ? v : undefined;
+              })(),
+              estimateTotal: ((): number | undefined => {
+                const v = (r as Record<string, unknown>).estimateTotal;
+                if (typeof v === "number") return v;
+                const l = (r as Record<string, unknown>).labour_cost;
+                const p = (r as Record<string, unknown>).parts_cost;
+                const a = (r as Record<string, unknown>).additional_work;
+                const sum = [l, p, a].map((x) => (typeof x === "number" ? x : 0)).reduce((s, n) => s + n, 0);
+                return sum > 0 ? sum : undefined;
+              })(),
+              ratingValue: ((): number | undefined => {
+                const v = (r as Record<string, unknown>).ratingValue;
+                return typeof v === "number" ? v : undefined;
+              })(),
+              ratingComment: ((): string | undefined => {
+                const v = (r as Record<string, unknown>).ratingComment;
+                return typeof v === "string" ? v : undefined;
+              })(),
+              lastUpdatedByRole: typeof r.lastUpdatedByRole === "string" ? (r.lastUpdatedByRole as string) : undefined,
+              lastUpdatedMessage: typeof r.lastUpdatedMessage === "string" ? (r.lastUpdatedMessage as string) : undefined,
+              lastUpdatedAt: r.lastUpdatedAt ? String(r.lastUpdatedAt) : undefined,
+              staffAcceptanceStatus:
+                typeof r.staffAcceptanceStatus === "string" &&
+                (["none", "pending", "accepted", "declined"] as const).includes(
+                  String(r.staffAcceptanceStatus) as "none" | "pending" | "accepted" | "declined"
+                )
+                  ? (String(r.staffAcceptanceStatus) as "none" | "pending" | "accepted" | "declined")
+                  : undefined,
+              payments,
+            };
+          });
+        }
+        lastErr =
+          (data && typeof data.message === "string" && data.message) ||
+          `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : "Network error";
       }
-      lastErr =
-        (data && typeof data.message === "string" && data.message) ||
-        `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
-    } catch (e) {
-      lastErr = e instanceof Error ? e.message : "Network error";
     }
+    throw new Error(lastErr);
+  })();
+  const entry = { key, promise: task };
+  bookingsCachePromise = entry;
+  try {
+    const result = await task;
+    bookingsCache = { key, at: Date.now(), value: result };
+    bookingsCachePromise = null;
+    return result;
+  } catch (e) {
+    bookingsCachePromise = null;
+    throw e;
   }
-  throw new Error(lastErr);
 }
 
 export async function patchBookingApi(id: string, payload: Record<string, unknown>): Promise<void> {
@@ -778,24 +864,52 @@ export type AdminDashboardStats = {
   onlineStaffCount: number;
   updatedAt?: string;
 };
+let adminStatsCache: AdminDashboardStats | null = null;
+let adminStatsCacheTime = 0;
+let adminStatsPromise: Promise<AdminDashboardStats> | null = null;
+let merchantStatsCache: MerchantDashboardStats | null = null;
+let merchantStatsCacheTime = 0;
+let merchantStatsPromise: Promise<MerchantDashboardStats> | null = null;
+const DASHBOARD_STATS_TTL_MS = 10000;
+
 export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
+  const now = Date.now();
+  if (adminStatsCache && now - adminStatsCacheTime < DASHBOARD_STATS_TTL_MS) {
+    return adminStatsCache;
+  }
+  if (adminStatsPromise) {
+    return adminStatsPromise;
+  }
   const endpoints = ['/api/dashboard/admin', 'http://localhost:5000/api/dashboard/admin'];
   let lastErr = 'Failed to fetch admin dashboard stats';
-  for (const url of endpoints) {
-    try {
-      const res = await apiFetch(url);
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data && data.ok && data.stats) {
-        return { ...data.stats, updatedAt: data.updatedAt } as AdminDashboardStats;
+  const task = (async () => {
+    for (const url of endpoints) {
+      try {
+        const res = await apiFetch(url);
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data && data.ok && data.stats) {
+          return { ...data.stats, updatedAt: data.updatedAt } as AdminDashboardStats;
+        }
+        lastErr =
+          (data && typeof data.message === 'string' && data.message) ||
+          `HTTP ${res.status}`;
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : 'Network error';
       }
-      lastErr =
-        (data && typeof data.message === 'string' && data.message) ||
-        `HTTP ${res.status}`;
-    } catch (e) {
-      lastErr = e instanceof Error ? e.message : 'Network error';
     }
+    throw new Error(lastErr);
+  })();
+  adminStatsPromise = task;
+  try {
+    const result = await task;
+    adminStatsCache = result;
+    adminStatsCacheTime = Date.now();
+    adminStatsPromise = null;
+    return result;
+  } catch (e) {
+    adminStatsPromise = null;
+    throw e;
   }
-  throw new Error(lastErr);
 }
 
 export type MerchantDashboardStats = {
@@ -807,23 +921,43 @@ export type MerchantDashboardStats = {
   updatedAt?: string;
 };
 export async function getMerchantDashboardStats(): Promise<MerchantDashboardStats> {
+  const now = Date.now();
+  if (merchantStatsCache && now - merchantStatsCacheTime < DASHBOARD_STATS_TTL_MS) {
+    return merchantStatsCache;
+  }
+  if (merchantStatsPromise) {
+    return merchantStatsPromise;
+  }
   const endpoints = ['/api/dashboard/merchant', 'http://localhost:5000/api/dashboard/merchant'];
   let lastErr = 'Failed to fetch merchant dashboard stats';
-  for (const url of endpoints) {
-    try {
-      const res = await apiFetch(url);
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data && data.ok && data.stats) {
-        return { ...data.stats, updatedAt: data.updatedAt } as MerchantDashboardStats;
+  const task = (async () => {
+    for (const url of endpoints) {
+      try {
+        const res = await apiFetch(url);
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data && data.ok && data.stats) {
+          return { ...data.stats, updatedAt: data.updatedAt } as MerchantDashboardStats;
+        }
+        lastErr =
+          (data && typeof data.message === 'string' && data.message) ||
+          `HTTP ${res.status}`;
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : 'Network error';
       }
-      lastErr =
-        (data && typeof data.message === 'string' && data.message) ||
-        `HTTP ${res.status}`;
-    } catch (e) {
-      lastErr = e instanceof Error ? e.message : 'Network error';
     }
+    throw new Error(lastErr);
+  })();
+  merchantStatsPromise = task;
+  try {
+    const result = await task;
+    merchantStatsCache = result;
+    merchantStatsCacheTime = Date.now();
+    merchantStatsPromise = null;
+    return result;
+  } catch (e) {
+    merchantStatsPromise = null;
+    throw e;
   }
-  throw new Error(lastErr);
 }
 export async function setStaffOnlineApi(online: boolean): Promise<{ ok: boolean; online: boolean }> {
   const session = getAuth();
@@ -1072,6 +1206,39 @@ export async function createCustomerVehicleApi(input: { ownerEmail: string; type
       const obj = data as { vehicle?: { id?: unknown } };
       if (res.ok && obj && obj.vehicle && obj.vehicle.id) {
         return String(obj.vehicle.id || "");
+      }
+      {
+        const msg = (data as { message?: unknown })?.message;
+        lastErr = typeof msg === "string" ? msg : `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
+      }
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
+}
+
+export async function deleteCustomerVehicleFromApi(id: string, ownerEmail: string) {
+  const qs = new URLSearchParams();
+  if (ownerEmail) qs.set("email", ownerEmail);
+  const suffix = qs.toString();
+  const endpoints = [
+    `/api/users/vehicles/${encodeURIComponent(id)}${suffix ? `?${suffix}` : ""}`,
+    `http://localhost:5000/api/users/vehicles/${encodeURIComponent(id)}${suffix ? `?${suffix}` : ""}`,
+  ];
+  let lastErr = "Failed to delete vehicle";
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, { method: "DELETE" });
+      let data: unknown = null;
+      let parsed = true;
+      try {
+        data = await res.json();
+      } catch {
+        parsed = false;
+      }
+      if (res.ok) {
+        return;
       }
       {
         const msg = (data as { message?: unknown })?.message;

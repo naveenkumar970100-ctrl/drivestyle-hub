@@ -16,6 +16,8 @@ const vehicleSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+vehicleSchema.index({ ownerEmail: 1, createdAt: -1 });
+
 const Vehicle = mongoose.models.Vehicle || mongoose.model('Vehicle', vehicleSchema);
 
 module.exports = { Vehicle };

@@ -573,4 +573,21 @@ const listVehicles = async (req, res, next) => {
   }
 };
 
-module.exports = { getMe, listUsers, createUserByAdmin, deleteUserByAdmin, updateUserLocationByAdmin, lookupVehicle, createVehicle, listVehicles, setStaffOnline, setMyLocation, updateMeProfile };
+const deleteVehicle = async (req, res, next) => {
+  try {
+    const id = (req.params.id || '').toString();
+    if (!id) return res.status(400).json({ message: 'id required' });
+    const email = (req.query.email || req.body.ownerEmail || req.user?.email || '').toString().toLowerCase();
+    const doc = await Vehicle.findById(id);
+    if (!doc) return res.status(404).json({ message: 'Vehicle not found' });
+    if (email && doc.ownerEmail && doc.ownerEmail.toLowerCase() !== email) {
+      return res.status(403).json({ message: 'Not allowed' });
+    }
+    await Vehicle.deleteOne({ _id: id });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { getMe, listUsers, createUserByAdmin, deleteUserByAdmin, updateUserLocationByAdmin, lookupVehicle, createVehicle, listVehicles, deleteVehicle, setStaffOnline, setMyLocation, updateMeProfile };

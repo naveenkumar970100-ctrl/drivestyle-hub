@@ -60,6 +60,22 @@ const MerchantDashboard = () => {
   useEffect(() => {
     (async () => {
       const session = getAuth();
+      const bookingsTask = (async () => {
+        try {
+          const list = await listApiBookings({ limit: 100 });
+          setBookings(list);
+        } catch {
+          void 0;
+        }
+      })();
+      const statsTask = (async () => {
+        try {
+          const s = await getMerchantDashboardStats();
+          setMstats({ activeServices: s.activeServices, totalBookings: s.totalBookings, earnings: s.earnings, ratingAvg: s.ratingAvg });
+        } catch {
+          void 0;
+        }
+      })();
       let current: ApiUser | null = null;
       try {
         current = await getCurrentUserFromApi();
@@ -68,7 +84,9 @@ const MerchantDashboard = () => {
           setUsers(u);
           if (!current && session?.email) current = u.find((x) => x.email === session.email) || null;
           if (!current) current = u.find((x) => x.role === "merchant") || null;
-        } catch { /* ignore users list in restricted envs */ }
+        } catch {
+          /* ignore user fetch error */
+        }
       } catch {
         current = null;
       }
@@ -78,34 +96,42 @@ const MerchantDashboard = () => {
           const s = getAuth();
           if (s) {
             const sameRole = s.role;
-            // ensure email is stored for downstream fetches
             setAuth({ ...s, email: current.email, role: sameRole, token: s.token });
           }
         }
-      } catch { /* ignore */ }
-      try {
-        const list = await listApiBookings();
-        setBookings(list);
-        try {
-          const s = await getMerchantDashboardStats();
-          setMstats({ activeServices: s.activeServices, totalBookings: s.totalBookings, earnings: s.earnings, ratingAvg: s.ratingAvg });
-        } catch { /* ignore */ }
       } catch {
-        setBookings([]);
+        /* ignore auth sync error */
       }
+      await Promise.all([bookingsTask, statsTask]);
     })();
     const id = setInterval(async () => {
       try {
-        const list = await listApiBookings();
-        setBookings(list);
-        try {
-          const s = await getMerchantDashboardStats();
-          setMstats({ activeServices: s.activeServices, totalBookings: s.totalBookings, earnings: s.earnings, ratingAvg: s.ratingAvg });
-        } catch { /* ignore */ }
+        const tasks: Promise<void>[] = [];
+        tasks.push(
+          (async () => {
+            try {
+              const list = await listApiBookings({ limit: 100 });
+              setBookings(list);
+            } catch {
+              /* ignore bookings fetch error */
+            }
+          })(),
+        );
+        tasks.push(
+          (async () => {
+            try {
+              const s = await getMerchantDashboardStats();
+              setMstats({ activeServices: s.activeServices, totalBookings: s.totalBookings, earnings: s.earnings, ratingAvg: s.ratingAvg });
+            } catch {
+              /* ignore stats fetch error */
+            }
+          })(),
+        );
+        await Promise.all(tasks);
       } catch (_e) {
         void 0;
       }
-    }, 3000);
+    }, 10000);
     return () => clearInterval(id);
   }, []);
   const myBookings = useMemo(() => {
@@ -340,7 +366,7 @@ const MerchantDashboard = () => {
                       value={String(b.staffId || "")}
                       onValueChange={async (v) => {
                         await patchBookingApi(b.id, { action: "assign_staff", staffId: v });
-                        const list = await listApiBookings();
+                        const list = await listApiBookings({ limit: 100 });
                         setBookings(list);
                         addNotificationForUser(v, "New Task", `Booking assigned: ${b.service}`);
                         toast({ title: "Staff assigned", description: v });
@@ -360,7 +386,7 @@ const MerchantDashboard = () => {
                         const parts = Number(window.prompt("Parts cost", "0") || "0");
                         const additional = Number(window.prompt("Additional work", "0") || "0");
                         await patchBookingApi(b.id, { action: "merchant_update_estimate", labour_cost: labour, parts_cost: parts, additional_work: additional });
-                        const list = await listApiBookings();
+                        const list = await listApiBookings({ limit: 100 });
                         setBookings(list);
                         toast({ title: "Estimate updated" });
                       }}
@@ -399,7 +425,7 @@ const MerchantDashboard = () => {
                               if (!amount || amount <= 0) { toast({ title: "Amount required", variant: "destructive" }); return; }
                               try {
                                 await patchBookingApi(b.id, { action: "add_payment", amount, method, reference });
-                                const next = await listApiBookings();
+                                const next = await listApiBookings({ limit: 100 });
                                 setBookings(next);
                                 toast({ title: "Payment recorded", description: `${b.customerEmail} • ₹${amount}` });
                               } catch (err) {
@@ -485,7 +511,7 @@ const MerchantDashboard = () => {
                         className="rounded-md border px-3 py-1 text-sm"
                         onClick={async () => {
                           await patchBookingApi(b.id, { action: "merchant_complete_service" });
-                          const list = await listApiBookings();
+                          const list = await listApiBookings({ limit: 100 });
                           setBookings(list);
                           toast({ title: "Service completed" });
                         }}
@@ -502,7 +528,7 @@ const MerchantDashboard = () => {
                         const file_url = String(window.prompt("Bill file URL", "") || "");
                         const breakdown = String(window.prompt("Breakdown", "") || "");
                         await patchBookingApi(b.id, { action: "merchant_upload_bill", invoice_number, gst, total, file_url, breakdown });
-                        const list = await listApiBookings();
+                        const list = await listApiBookings({ limit: 100 });
                         setBookings(list);
                         toast({ title: "Bill uploaded" });
                       }}
@@ -539,7 +565,7 @@ const MerchantDashboard = () => {
                               return;
                             }
                             await patchBookingApi(b.id, { action: "assign_merchant", merchantId: me.id });
-                            const list = await listApiBookings();
+                            const list = await listApiBookings({ limit: 100 });
                             setBookings(list);
                             toast({ title: "Booking claimed" });
                           }}

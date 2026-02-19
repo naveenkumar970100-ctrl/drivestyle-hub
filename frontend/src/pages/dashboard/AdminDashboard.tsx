@@ -147,21 +147,30 @@ const AdminDashboard = () => {
     setPayments(listPayments());
     setInvoices(listInvoices());
     (async () => {
-      try {
-        const u = await listUsersFromApi();
-        setUsers(u);
-      } catch (e) {
-        /* ignore */
-      }
-      try {
-        setLoadingApiBookings(true);
-        const b = await listApiBookings();
-        setApiBookings(b);
-      } catch (e) {
-        /* ignore */
-      } finally {
-        setLoadingApiBookings(false);
-      }
+      setLoadingApiBookings(true);
+      const tasks: Promise<void>[] = [];
+      tasks.push(
+        (async () => {
+          try {
+            const u = await listUsersFromApi();
+            setUsers(u);
+          } catch {
+            /* ignore user fetch error */
+          }
+        })(),
+      );
+      tasks.push(
+        (async () => {
+            try {
+              const b = await listApiBookings({ limit: 100 });
+              setApiBookings(b);
+            } catch {
+              /* ignore bookings fetch error */
+            }
+        })(),
+      );
+      await Promise.all(tasks);
+      setLoadingApiBookings(false);
     })();
   }, []);
   useEffect(() => {
@@ -170,21 +179,30 @@ const AdminDashboard = () => {
   useEffect(() => {
     if (tab === "recent-bookings" || tab === "dashboard") {
       (async () => {
-        try {
-          const u = await listUsersFromApi();
-          setUsers(u);
-        } catch {
-          /* ignore */
-        }
-        try {
-          setLoadingApiBookings(true);
-          const b = await listApiBookings();
-          setApiBookings(b);
-        } catch {
-          /* ignore */
-        } finally {
-          setLoadingApiBookings(false);
-        }
+        setLoadingApiBookings(true);
+        const tasks: Promise<void>[] = [];
+        tasks.push(
+          (async () => {
+            try {
+              const u = await listUsersFromApi();
+              setUsers(u);
+            } catch {
+              /* ignore user fetch error */
+            }
+          })(),
+        );
+        tasks.push(
+          (async () => {
+            try {
+              const b = await listApiBookings({ limit: 100 });
+              setApiBookings(b);
+            } catch {
+              /* ignore bookings fetch error */
+            }
+          })(),
+        );
+        await Promise.all(tasks);
+        setLoadingApiBookings(false);
       })();
     }
   }, [tab]);
@@ -193,22 +211,41 @@ const AdminDashboard = () => {
     if (tab === "dashboard" || tab === "recent-bookings") {
       timer = window.setInterval(async () => {
         try {
+          const tasks: Promise<void>[] = [];
           if (tab === "dashboard") {
-            const u = await listUsersFromApi();
-            setUsers(u);
-            try {
-              const s = await getAdminDashboardStats();
-              setAdminStats({ totalUsers: s.totalUsers, activeBookings: s.activeBookings, revenue: s.revenue, onlineStaffCount: s.onlineStaffCount });
-            } catch { /* ignore */ }
+            tasks.push(
+              (async () => {
+                try {
+                  const u = await listUsersFromApi();
+                  setUsers(u);
+                } catch {
+                  /* ignore */
+                }
+                try {
+                  const s = await getAdminDashboardStats();
+                  setAdminStats({ totalUsers: s.totalUsers, activeBookings: s.activeBookings, revenue: s.revenue, onlineStaffCount: s.onlineStaffCount });
+                } catch {
+                  /* ignore */
+                }
+              })(),
+            );
           }
-          try {
-            setLoadingApiBookings(true);
-            const b = await listApiBookings();
-            setApiBookings(b);
-          } catch { /* ignore */ }
-          finally { setLoadingApiBookings(false); }
+          tasks.push(
+            (async () => {
+              try {
+                setLoadingApiBookings(true);
+                const b = await listApiBookings({ limit: 100 });
+                setApiBookings(b);
+              } catch {
+                /* ignore */
+              } finally {
+                setLoadingApiBookings(false);
+              }
+            })(),
+          );
+          await Promise.all(tasks);
         } catch { void 0; }
-      }, 3000);
+      }, 10000);
     }
     return () => {
       if (timer) window.clearInterval(timer);
@@ -788,12 +825,12 @@ const AdminDashboard = () => {
                         try {
                           setApiBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, merchantId: v } : x)));
                           await patchBookingApi(b.id, { action: "assign_merchant", merchantId: v });
-                          const next = await listApiBookings();
+                          const next = await listApiBookings({ limit: 100 });
                           setApiBookings(next);
                         } catch (err) {
                           const message = err instanceof Error ? err.message : String(err);
                           toast({ title: "Failed to assign merchant", description: message, variant: "destructive" });
-                          const next = await listApiBookings();
+                          const next = await listApiBookings({ limit: 100 });
                           setApiBookings(next);
                         }
                       }}
@@ -818,14 +855,14 @@ const AdminDashboard = () => {
                         try {
                           setApiBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, staffId: v } : x)));
                           await patchBookingApi(b.id, { action: "assign_staff", staffId: v });
-                          const next = await listApiBookings();
+                          const next = await listApiBookings({ limit: 100 });
                           setApiBookings(next);
                           addNotificationForUser(v, "New Task", `Booking assigned: ${b.service}`);
                           toast({ title: "Staff assigned", description: v });
                         } catch (err) {
                           const message = err instanceof Error ? err.message : String(err);
                           toast({ title: "Failed to assign staff", description: message, variant: "destructive" });
-                          const next = await listApiBookings();
+                          const next = await listApiBookings({ limit: 100 });
                           setApiBookings(next);
                         }
                       }}
@@ -849,13 +886,13 @@ const AdminDashboard = () => {
                       onValueChange={async (v) => {
                         try {
                           await patchBookingApi(b.id, { action: "admin_update_status", status: v });
-                          const next = await listApiBookings();
+                          const next = await listApiBookings({ limit: 100 });
                           setApiBookings(next);
                           toast({ title: "Status updated", description: `${b.customerEmail} • ${v}` });
                         } catch (err) {
                           const message = err instanceof Error ? err.message : String(err);
                           toast({ title: "Failed to update status", description: message, variant: "destructive" });
-                          const next = await listApiBookings();
+                          const next = await listApiBookings({ limit: 100 });
                           setApiBookings(next);
                         }
                       }}
@@ -902,15 +939,15 @@ const AdminDashboard = () => {
                               const method = metEl?.value || "";
                               const reference = refEl?.value || "";
                               if (!amount || amount <= 0) { toast({ title: "Amount required", variant: "destructive" }); return; }
-                              try {
-                                await patchBookingApi(b.id, { action: "add_payment", amount, method, reference });
-                                const next = await listApiBookings();
-                                setApiBookings(next);
-                                toast({ title: "Payment recorded", description: `${b.customerEmail} • ₹${amount}` });
-                              } catch (err) {
-                                const message = err instanceof Error ? err.message : String(err);
-                                toast({ title: "Failed to record", description: message, variant: "destructive" });
-                              }
+                          try {
+                            await patchBookingApi(b.id, { action: "add_payment", amount, method, reference });
+                            const next = await listApiBookings({ limit: 100 });
+                            setApiBookings(next);
+                            toast({ title: "Payment recorded", description: `${b.customerEmail} • ₹${amount}` });
+                          } catch (err) {
+                            const message = err instanceof Error ? err.message : String(err);
+                            toast({ title: "Failed to record", description: message, variant: "destructive" });
+                          }
                             }}
                             className="w-full gradient-accent border-0 text-accent-foreground"
                           >
@@ -992,13 +1029,13 @@ const AdminDashboard = () => {
                         onClick={async () => {
                           try {
                             await patchBookingApi(b.id, { action: "admin_update_status", status: "paid" });
-                            const next = await listApiBookings();
+                            const next = await listApiBookings({ limit: 100 });
                             setApiBookings(next);
                             toast({ title: "Marked Paid", description: b.customerEmail });
                           } catch (err) {
                             const message = err instanceof Error ? err.message : String(err);
                             toast({ title: "Failed to mark paid", description: message, variant: "destructive" });
-                            const next = await listApiBookings();
+                            const next = await listApiBookings({ limit: 100 });
                             setApiBookings(next);
                           }
                         }}
@@ -1020,7 +1057,7 @@ const AdminDashboard = () => {
                           const ok = window.confirm(`Approve booking for ${b.customerEmail}?`);
                           if (!ok) return;
                           await patchBookingApi(b.id, { action: "approve" });
-                          const next = await listApiBookings();
+                          const next = await listApiBookings({ limit: 100 });
                           setApiBookings(next);
                           addNotificationForUser(String(b.merchantId), "New Booking", `Assigned booking for ${b.customerEmail}`);
                           toast({ title: "Approved", description: b.customerEmail });
@@ -1034,7 +1071,7 @@ const AdminDashboard = () => {
                         className="text-destructive border-destructive/30"
                         onClick={async () => {
                           await patchBookingApi(b.id, { action: "reject" });
-                          const next = await listApiBookings();
+                          const next = await listApiBookings({ limit: 100 });
                           setApiBookings(next);
                           toast({ title: "Rejected", description: b.customerEmail });
                         }}
@@ -1061,7 +1098,7 @@ const AdminDashboard = () => {
                           if (!ok) return;
                           try {
                             await deleteApiBooking(b.id);
-                            const next = await listApiBookings();
+                            const next = await listApiBookings({ limit: 100 });
                             setApiBookings(next);
                             toast({ title: "Booking deleted", description: b.customerEmail });
                           } catch (err) {

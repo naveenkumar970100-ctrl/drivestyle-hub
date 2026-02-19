@@ -69,6 +69,10 @@ const bookingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+bookingSchema.index({ customerEmail: 1, createdAt: -1 });
+bookingSchema.index({ merchantId: 1, createdAt: -1 });
+bookingSchema.index({ staffId: 1, createdAt: -1 });
+
 const Booking = mongoose.models.Booking || mongoose.model('Booking', bookingSchema);
 
 module.exports = { Booking };

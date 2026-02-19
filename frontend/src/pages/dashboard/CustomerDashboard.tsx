@@ -1,11 +1,11 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { motion } from "framer-motion";
-import { Car, ShoppingBag, Clock, CheckCircle, Pencil, Image as ImageIcon } from "lucide-react";
+import { Car, ShoppingBag, Clock, CheckCircle, Pencil, Image as ImageIcon, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { useEffect, useState, useMemo } from "react";
-import { getAuth, setAuth, listCustomerVehiclesFromApi, createCustomerVehicleApi, fetchVehicleDetails, listApiBookings, createBookingApi, listInvoices, downloadInvoice, listUsersFromApi, updateMyProfileApi, getCurrentUserFromApi, type CustomerVehicle, type VehicleType, type ApiBooking, type Invoice, type ApiUser } from "@/lib/utils";
+import { getAuth, setAuth, listCustomerVehiclesFromApi, createCustomerVehicleApi, deleteCustomerVehicleFromApi, fetchVehicleDetails, listApiBookings, createBookingApi, listInvoices, downloadInvoice, listUsersFromApi, updateMyProfileApi, getCurrentUserFromApi, type CustomerVehicle, type VehicleType, type ApiBooking, type Invoice, type ApiUser } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -65,38 +65,64 @@ const CustomerDashboard = () => {
             if (session) setAuth({ ...session, email: me.email });
           }
         }
-      } catch { /* ignore */ }
-      try {
-        const list = await listApiBookings(session?.role === "Admin" || !email ? undefined : { email });
-        setApiBookings(list);
       } catch {
-        setApiBookings([]);
+        /* ignore missing current user */
       }
-      try {
-        if (email) {
-          const v = await listCustomerVehiclesFromApi(email);
-          setVehicles(v);
-        } else {
-          setVehicles([]);
-        }
-      } catch {
-        setVehicles([]);
-      }
-      try {
-        setInvoices(listInvoices());
-      } catch {
-        setInvoices([]);
-      }
-      try {
-        const u = await listUsersFromApi();
-        setUsers(u);
-      } catch { setUsers([]); }
+      const tasks: Promise<void>[] = [];
+      tasks.push(
+        (async () => {
+          try {
+            const list = await listApiBookings(
+              session?.role === "Admin" || !email ? { limit: 100 } : { email, limit: 100 },
+            );
+            setApiBookings(list);
+          } catch {
+            setApiBookings([]);
+          }
+        })(),
+      );
+      tasks.push(
+        (async () => {
+          try {
+            if (email) {
+              const v = await listCustomerVehiclesFromApi(email);
+              setVehicles(v);
+            } else {
+              setVehicles([]);
+            }
+          } catch {
+            setVehicles([]);
+          }
+        })(),
+      );
+      tasks.push(
+        (async () => {
+          try {
+            setInvoices(listInvoices());
+          } catch {
+            setInvoices([]);
+          }
+        })(),
+      );
+      tasks.push(
+        (async () => {
+          try {
+            const u = await listUsersFromApi();
+            setUsers(u);
+          } catch {
+            setUsers([]);
+          }
+        })(),
+      );
+      await Promise.all(tasks);
     })();
     const id = setInterval(async () => {
       const session = getAuth();
       const email = session?.email || "";
       try {
-        const list = await listApiBookings(session?.role === "Admin" || !email ? undefined : { email });
+        const list = await listApiBookings(
+          session?.role === "Admin" || !email ? { limit: 100 } : { email, limit: 100 },
+        );
         setApiBookings(list);
       } catch (_e) {
         void 0;
@@ -108,7 +134,7 @@ const CustomerDashboard = () => {
         const u = await listUsersFromApi();
         setUsers(u);
       } catch { /* ignore */ }
-    }, 3000);
+    }, 10000);
     return () => clearInterval(id);
   }, []);
   const total = apiBookings.length;
@@ -219,7 +245,7 @@ const CustomerDashboard = () => {
                             date: bookingForm.date,
                             time: bookingForm.time,
                           });
-                          const list = await listApiBookings({ email: session.email });
+                          const list = await listApiBookings({ email: session.email, limit: 100 });
                           setApiBookings(list);
                           setBookingForm({ vehicle: "car", service: "" });
                           setCustPos(null);
@@ -470,7 +496,30 @@ const CustomerDashboard = () => {
                     <div className="font-medium">{v.make} {v.model}</div>
                     <div className="text-sm text-muted-foreground">{v.type === "bike" ? "Bike" : "Car"} {v.year && `• ${v.year}`}</div>
                   </div>
-                  <Badge variant="secondary">{v.engine || v.displacement || "Spec"}</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">{v.engine || v.displacement || "Spec"}</Badge>
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      onClick={async () => {
+                        const ok = window.confirm("Are you sure you want to delete this vehicle? This action cannot be undone.");
+                        if (!ok) return;
+                        const session = getAuth();
+                        if (!session?.email) return;
+                        try {
+                          await deleteCustomerVehicleFromApi(v.id, session.email);
+                          const next = await listCustomerVehiclesFromApi(session.email);
+                          setVehicles(next);
+                          toast({ title: "Vehicle deleted", description: v.plate || v.vin || "" });
+                        } catch (err) {
+                          const m = err instanceof Error ? err.message : String(err);
+                          toast({ title: "Failed to delete vehicle", description: m, variant: "destructive" });
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

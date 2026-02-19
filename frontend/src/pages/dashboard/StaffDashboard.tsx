@@ -39,6 +39,14 @@ const StaffDashboard = () => {
   useEffect(() => {
     (async () => {
       const session = getAuth();
+      const bookingsTask = (async () => {
+        try {
+          const list = await listApiBookings({ limit: 100 });
+          setBookings(list);
+        } catch {
+          void 0;
+        }
+      })();
       let current: ApiUser | null = null;
       try {
         current = await getCurrentUserFromApi();
@@ -48,34 +56,23 @@ const StaffDashboard = () => {
           if (session?.email) current = u.find((x) => x.email === session.email) || null;
           if (!current) current = u.find((x) => x.role === "staff") || null;
         }
-        if (users.length === 0) {
-          try {
-            const u = await listUsersFromApi();
-            setUsers(u);
-          } catch { /* ignore */ }
-        }
       } catch {
         current = null;
       }
       setMe(current);
       setOnline(!!current?.staffOnline);
-      try {
-        const list = await listApiBookings();
-        setBookings(list);
-      } catch {
-        setBookings([]);
-      }
+      await bookingsTask;
     })();
     const id = setInterval(async () => {
       try {
-        const list = await listApiBookings();
+        const list = await listApiBookings({ limit: 100 });
         setBookings(list);
       } catch (_e) {
         void 0;
       }
-    }, 5000);
+    }, 10000);
     return () => clearInterval(id);
-  }, [users.length]);
+  }, []);
   useEffect(() => {
     if (online && "geolocation" in navigator) {
       const id = navigator.geolocation.watchPosition(
@@ -149,7 +146,7 @@ const StaffDashboard = () => {
   async function logCall(b: ApiBooking) {
     try {
       await patchBookingApi(b.id, { action: "staff_update_wear_tear", wearTear: `CALL ${new Date().toISOString()}` });
-      const next = await listApiBookings();
+      const next = await listApiBookings({ limit: 100 });
       setBookings(next);
       toast({ title: "Call logged", description: b.customerEmail });
     } catch (err) {
@@ -164,7 +161,7 @@ const StaffDashboard = () => {
     setSaving(true);
     try {
       await patchBookingApi(b.id, { action: "staff_upload_before_media", photosBefore: [media] });
-      const next = await listApiBookings();
+      const next = await listApiBookings({ limit: 100 });
       setBookings(next);
       setBeforeFile(null);
       toast({ title: "Before media uploaded", description: b.customerEmail });
@@ -179,7 +176,7 @@ const StaffDashboard = () => {
     setSaving(true);
     try {
       await patchBookingApi(b.id, { action: "staff_start" });
-      const next = await listApiBookings();
+      const next = await listApiBookings({ limit: 100 });
       setBookings(next);
       toast({ title: "Pickup confirmed", description: b.customerEmail });
     } catch (err) {
@@ -193,7 +190,7 @@ const StaffDashboard = () => {
     setSaving(true);
     try {
       await patchBookingApi(b.id, { action: "staff_in_transit" });
-      const next = await listApiBookings();
+      const next = await listApiBookings({ limit: 100 });
       setBookings(next);
       toast({ title: "In transit", description: b.customerEmail });
     } catch (err) {
@@ -212,7 +209,7 @@ const StaffDashboard = () => {
       }
       try { await patchBookingApi(b.id, { action: "staff_in_transit" }); } catch { /* ignore invalid transition */ }
       try { await patchBookingApi(b.id, { action: "staff_handover" }); } catch { /* ignore if already at centre */ }
-      const next = await listApiBookings();
+      const next = await listApiBookings({ limit: 100 });
       setBookings(next);
       if (b.merchantId) {
         addNotificationForUser(b.merchantId, "Vehicle Arrived", `Booking ${b.service} is at service centre`);
@@ -229,7 +226,7 @@ const StaffDashboard = () => {
     setSaving(true);
     try {
       await patchBookingApi(b.id, { action: "staff_drop_vehicle" });
-      const next = await listApiBookings();
+      const next = await listApiBookings({ limit: 100 });
       setBookings(next);
       if (b.merchantId) {
         addNotificationForUser(b.merchantId, "Vehicle Dropped", `Booking ${b.service} dropped at service centre`);
@@ -249,7 +246,7 @@ const StaffDashboard = () => {
     setSaving(true);
     try {
       await patchBookingApi(b.id, { action: "add_photos", photosAfter: [media] });
-      const next = await listApiBookings();
+      const next = await listApiBookings({ limit: 100 });
       setBookings(next);
       setAfterFile(null);
       toast({ title: "After media uploaded", description: b.customerEmail });
@@ -267,7 +264,7 @@ const StaffDashboard = () => {
     setSaving(true);
     try {
       await patchBookingApi(b.id, { action: "staff_upload_return_media", photosReturn: [media] });
-      const next = await listApiBookings();
+      const next = await listApiBookings({ limit: 100 });
       setBookings(next);
       setReturnFile(null);
       toast({ title: "Return media uploaded", description: b.customerEmail });
@@ -283,7 +280,7 @@ const StaffDashboard = () => {
     setSaving(true);
     try {
       await patchBookingApi(b.id, { action: "staff_update_wear_tear", wearTear: text });
-      const next = await listApiBookings();
+      const next = await listApiBookings({ limit: 100 });
       setBookings(next);
       toast({ title: "Wear & tear updated", description: b.customerEmail });
     } catch (err) {
@@ -304,7 +301,7 @@ const StaffDashboard = () => {
       } else {
         toast({ title: "Cannot confirm payment", description: `Status: ${b.status}`, variant: "destructive" });
       }
-      const next = await listApiBookings();
+      const next = await listApiBookings({ limit: 100 });
       setBookings(next);
       toast({ title: "Payment verified", description: b.customerEmail });
       navigate("/dashboard/staff?tab=my-tasks");
@@ -398,7 +395,7 @@ const StaffDashboard = () => {
                           setSaving(true);
                           try {
                             await patchBookingApi(t.id, { action: "staff_accept" });
-                            const list = await listApiBookings();
+                            const list = await listApiBookings({ limit: 100 });
                             setBookings(list);
                             toast({ title: "Accepted", description: t.customerEmail });
                           } catch (e) {
@@ -419,7 +416,7 @@ const StaffDashboard = () => {
                           setSaving(true);
                           try {
                             await patchBookingApi(t.id, { action: "staff_decline" });
-                            const list = await listApiBookings();
+                            const list = await listApiBookings({ limit: 100 });
                             setBookings(list);
                             toast({ title: "Declined", description: t.customerEmail });
                           } catch (e) {
@@ -585,7 +582,7 @@ const StaffDashboard = () => {
                               setSaving(true);
                               try {
                                 await patchBookingApi(t.id, { action: "staff_accept" });
-                                const list = await listApiBookings();
+                            const list = await listApiBookings({ limit: 100 });
                                 setBookings(list);
                                 toast({ title: "Accepted", description: t.customerEmail });
                               } catch (e) {
@@ -606,7 +603,7 @@ const StaffDashboard = () => {
                               setSaving(true);
                               try {
                                 await patchBookingApi(t.id, { action: "staff_decline" });
-                                const list = await listApiBookings();
+                            const list = await listApiBookings({ limit: 100 });
                                 setBookings(list);
                                 toast({ title: "Declined", description: t.customerEmail });
                               } catch (e) {
@@ -636,7 +633,7 @@ const StaffDashboard = () => {
                           const ok = window.confirm(`Are you sure you want to update status to ${v}?`);
                           if (!ok) return;
                           await patchBookingApi(t.id, { action: "update_status", status: v });
-                          const list = await listApiBookings();
+                          const list = await listApiBookings({ limit: 100 });
                           setBookings(list);
                         }}
                       >
@@ -682,7 +679,7 @@ const StaffDashboard = () => {
                         onClick={async () => {
                           if (!me?.id) return;
                           await patchBookingApi(t.id, { action: "assign_staff", staffId: me.id });
-                          const list = await listApiBookings();
+                          const list = await listApiBookings({ limit: 100 });
                           setBookings(list);
                           toast({ title: "Task claimed" });
                         }}
@@ -891,10 +888,10 @@ const StaffDashboard = () => {
           <motion.div {...fadeUp} transition={{ delay: 0.3 }} className="rounded-xl border bg-card p-6 shadow-card">
             <h2 className="font-heading text-xl font-bold">Bookings</h2>
             <div className="mt-4 space-y-3">
-              {myTasks.length === 0 && (
+              {bookings.length === 0 && (
                 <div className="rounded-lg border p-4 text-sm text-muted-foreground">No bookings yet</div>
               )}
-              {myTasks.map((t) => (
+              {bookings.map((t) => (
                 <div key={`bk-${t.id}`} className="flex flex-col gap-2 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="font-medium">{t.customerEmail}</div>
