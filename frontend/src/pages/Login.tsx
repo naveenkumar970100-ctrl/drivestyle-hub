@@ -22,19 +22,20 @@ const Login = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      const endpoints = [
-        "/api/auth/login",
-        "http://localhost:5000/api/auth/login",
-      ];
+      const endpoints = ["/api/auth/login", "http://localhost:5000/api/auth/login"];
+      const timeoutMs = 10000;
       let res: Response | null = null;
       let data: unknown = {};
       let parsed = true;
       for (const url of endpoints) {
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), timeoutMs);
         try {
           const r = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email: email.trim(), password }),
+            signal: controller.signal,
           });
           res = r;
           parsed = true;
@@ -44,13 +45,21 @@ const Login = () => {
             parsed = false;
             data = {};
           }
-          break;
-        } catch {
+          window.clearTimeout(timer);
+          if (res.ok || url === endpoints[endpoints.length - 1]) {
+            break;
+          }
+        } catch (err) {
+          window.clearTimeout(timer);
+          if (err instanceof DOMException && err.name === "AbortError") {
+            res = null;
+            continue;
+          }
           res = null;
         }
       }
       if (!res) {
-        toast({ title: "Login failed", description: "Network error", variant: "destructive" });
+        toast({ title: "Login failed", description: "Server not responding. Please try again.", variant: "destructive" });
         return;
       }
       if (!res.ok) {

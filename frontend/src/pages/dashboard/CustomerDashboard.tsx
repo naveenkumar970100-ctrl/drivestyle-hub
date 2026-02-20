@@ -1,11 +1,11 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { motion } from "framer-motion";
-import { Car, ShoppingBag, Clock, CheckCircle, Pencil, Image as ImageIcon, Trash2 } from "lucide-react";
+import { Car, ShoppingBag, Clock, CheckCircle, Pencil, Image as ImageIcon, Trash2, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { useEffect, useState, useMemo } from "react";
-import { getAuth, setAuth, listCustomerVehiclesFromApi, createCustomerVehicleApi, deleteCustomerVehicleFromApi, fetchVehicleDetails, listApiBookings, createBookingApi, listInvoices, downloadInvoice, listUsersFromApi, updateMyProfileApi, getCurrentUserFromApi, type CustomerVehicle, type VehicleType, type ApiBooking, type Invoice, type ApiUser } from "@/lib/utils";
+import { getAuth, setAuth, listCustomerVehiclesFromApi, createCustomerVehicleApi, deleteCustomerVehicleFromApi, fetchVehicleDetails, listApiBookings, createBookingApi, listInvoices, downloadInvoice, listUsersFromApi, updateMyProfileApi, getCurrentUserFromApi, patchBookingApi, type CustomerVehicle, type VehicleType, type ApiBooking, type Invoice, type ApiUser } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -21,7 +21,6 @@ const CustomerDashboard = () => {
   const { toast } = useToast();
   const { search } = useLocation();
   const [apiBookings, setApiBookings] = useState<ApiBooking[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [users, setUsers] = useState<ApiUser[]>([]);
   const [vehicles, setVehicles] = useState<CustomerVehicle[]>([]);
   const [bookingForm, setBookingForm] = useState<{ vehicle: VehicleType; service: string; registration?: string; location?: string; date?: string; time?: string }>({ vehicle: "car", service: "" });
@@ -53,6 +52,9 @@ const CustomerDashboard = () => {
   const [profileName, setProfileName] = useState<string>(session?.name || "edu");
   const [editOpen, setEditOpen] = useState(false);
   const [tempName, setTempName] = useState<string>(profileName);
+  const [reviewBookingId, setReviewBookingId] = useState<string | null>(null);
+  const [reviewRating, setReviewRating] = useState<number>(5);
+  const [reviewComment, setReviewComment] = useState<string>("");
   useEffect(() => {
     (async () => {
       const session = getAuth();
@@ -98,15 +100,6 @@ const CustomerDashboard = () => {
       tasks.push(
         (async () => {
           try {
-            setInvoices(listInvoices());
-          } catch {
-            setInvoices([]);
-          }
-        })(),
-      );
-      tasks.push(
-        (async () => {
-          try {
             const u = await listUsersFromApi();
             setUsers(u);
           } catch {
@@ -127,9 +120,6 @@ const CustomerDashboard = () => {
       } catch (_e) {
         void 0;
       }
-      try {
-        setInvoices(listInvoices());
-      } catch { /* ignore */ }
       try {
         const u = await listUsersFromApi();
         setUsers(u);
@@ -199,11 +189,44 @@ const CustomerDashboard = () => {
                           </MapContainer>
                         </div>
                         <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={() => {
-                            if ("geolocation" in navigator) {
-                              navigator.geolocation.getCurrentPosition((pos) => setCustPos([pos.coords.latitude, pos.coords.longitude]));
-                            }
-                          }}>Use My Location</Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (!("geolocation" in navigator)) {
+                                toast({ title: "Location unavailable", description: "Your browser does not support location access.", variant: "destructive" });
+                                return;
+                              }
+                              navigator.geolocation.getCurrentPosition(
+                                (pos) => {
+                                  const { latitude, longitude } = pos.coords;
+                                  setCustPos([latitude, longitude]);
+                                  setBookingForm((prev) => ({
+                                    ...prev,
+                                    location: prev.location && prev.location.trim().length > 0 ? prev.location : `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+                                  }));
+                                },
+                                (err) => {
+                                  const code = typeof err.code === "number" ? err.code : -1;
+                                  if (code === 3 && custPos) {
+                                    return;
+                                  }
+                                  const message =
+                                    code === 1
+                                      ? "Location permission denied. Please allow access in your browser."
+                                      : code === 2
+                                      ? "Location unavailable. Try again in an open area."
+                                      : code === 3
+                                      ? "Getting location timed out. Please try again."
+                                      : "Could not fetch your location.";
+                                  toast({ title: "Location error", description: message, variant: "destructive" });
+                                },
+                                { enableHighAccuracy: true, timeout: 20000, maximumAge: 300000 },
+                              );
+                            }}
+                          >
+                            Use My Location
+                          </Button>
                           {custPos && <span className="text-xs text-muted-foreground">Selected: {custPos[0].toFixed(5)}, {custPos[1].toFixed(5)}</span>}
                         </div>
                       </div>
@@ -222,10 +245,6 @@ const CustomerDashboard = () => {
                       onClick={async () => {
                         const session = getAuth();
                         if (!session?.email) return;
-                        if (vehicles.length === 0) {
-                          toast({ title: "Add vehicle first", description: "Save a vehicle to your garage", variant: "destructive" });
-                          return;
-                        }
                         if (!bookingForm.registration?.trim()) {
                           toast({ title: "Vehicle number required", description: "Enter your registration number", variant: "destructive" });
                           return;
@@ -548,7 +567,7 @@ const CustomerDashboard = () => {
                     )}
                     {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
                       <div className="mt-2">
-                        <div className="text-xs text-muted-foreground mb-1">Before Service</div>
+                        <div className="text-xs text-muted-foreground mb-1">Before Pickup</div>
                         <div className="flex flex-wrap gap-2">
                           {b.photosBefore.slice(0, 4).map((src, i) => (
                             <Dialog key={`before-${i}`}>
@@ -563,11 +582,11 @@ const CustomerDashboard = () => {
                         </div>
                       </div>
                     )}
-                    {Array.isArray(b.photosAfter) && b.photosAfter.length > 0 && (
+                    {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
                       <div className="mt-2">
-                        <div className="text-xs text-muted-foreground mb-1">After Service</div>
+                        <div className="text-xs text-muted-foreground mb-1">Before Service</div>
                         <div className="flex flex-wrap gap-2">
-                          {b.photosAfter.slice(0, 4).map((src, i) => (
+                        {b.beforeServicePhotos.slice(0, 4).map((src, i) => (
                             <Dialog key={`after-${i}`}>
                               <DialogTrigger asChild>
                                 <img src={src} alt="After" className="h-14 w-14 rounded object-cover border cursor-zoom-in" />
@@ -580,11 +599,11 @@ const CustomerDashboard = () => {
                         </div>
                       </div>
                     )}
-                    {Array.isArray(b.photosReturn) && b.photosReturn.length > 0 && (
+                    {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
                       <div className="mt-2">
-                        <div className="text-xs text-muted-foreground mb-1">Return</div>
+                        <div className="text-xs text-muted-foreground mb-1">After Service</div>
                         <div className="flex flex-wrap gap-2">
-                          {b.photosReturn.slice(0, 4).map((src, i) => (
+                        {b.afterServicePhotos.slice(0, 4).map((src, i) => (
                             <Dialog key={`ret-${i}`}>
                               <DialogTrigger asChild>
                                 <img src={src} alt="Return" className="h-14 w-14 rounded object-cover border cursor-zoom-in" />
@@ -602,6 +621,33 @@ const CustomerDashboard = () => {
                         Estimate: ₹{(b.estimateLabour || 0)} + ₹{(b.estimateParts || 0)} + ₹{(b.estimateAdditional || 0)} = ₹{b.estimateTotal}
                       </div>
                     )}
+                    {(() => {
+                      const su = String(b.status || "").toUpperCase();
+                      const canRate = su === "DELIVERED" || su === "COMPLETED";
+                      if (!canRate) return null;
+                      if (typeof b.ratingValue === "number") {
+                        return (
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Rating: {b.ratingValue}/5 {b.ratingComment ? `• "${b.ratingComment}"` : ""}
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="mt-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setReviewBookingId(b.id);
+                              setReviewRating(5);
+                              setReviewComment("");
+                            }}
+                          >
+                            Review Service
+                          </Button>
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">{b.date || "-"} {b.time && `• ${b.time}`}</span>
@@ -655,7 +701,8 @@ const CustomerDashboard = () => {
                           {(() => {
                             const hasMedia =
                               (Array.isArray(b.photosBefore) && b.photosBefore.length > 0) ||
-                              (Array.isArray(b.photosAfter) && b.photosAfter.length > 0) ||
+                              (Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0) ||
+                              (Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0) ||
                               (Array.isArray(b.photosReturn) && b.photosReturn.length > 0);
                             if (!hasMedia) {
                               return <div className="text-sm text-muted-foreground">No images uploaded yet.</div>;
@@ -664,7 +711,7 @@ const CustomerDashboard = () => {
                               <div className="space-y-4">
                                 {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
                                   <div>
-                                    <div className="text-xs text-muted-foreground mb-2">Before Service</div>
+                                    <div className="text-xs text-muted-foreground mb-2">Before Pickup</div>
                                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                                       {b.photosBefore.map((src, i) => (
                                         <img key={`tl-g-b-${i}`} src={src} alt="Before" className="w-full h-28 object-cover rounded border" />
@@ -672,21 +719,21 @@ const CustomerDashboard = () => {
                                     </div>
                                   </div>
                                 )}
-                                {Array.isArray(b.photosAfter) && b.photosAfter.length > 0 && (
+                                {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
                                   <div>
-                                    <div className="text-xs text-muted-foreground mb-2">After Service</div>
+                                    <div className="text-xs text-muted-foreground mb-2">Before Service</div>
                                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                      {b.photosAfter.map((src, i) => (
+                                      {b.beforeServicePhotos.map((src, i) => (
                                         <img key={`tl-g-a-${i}`} src={src} alt="After" className="w-full h-28 object-cover rounded border" />
                                       ))}
                                     </div>
                                   </div>
                                 )}
-                                {Array.isArray(b.photosReturn) && b.photosReturn.length > 0 && (
+                                {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
                                   <div>
-                                    <div className="text-xs text-muted-foreground mb-2">Return</div>
+                                    <div className="text-xs text-muted-foreground mb-2">After Service</div>
                                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                      {b.photosReturn.map((src, i) => (
+                                      {b.afterServicePhotos.map((src, i) => (
                                         <img key={`tl-g-r-${i}`} src={src} alt="Return" className="w-full h-28 object-cover rounded border" />
                                       ))}
                                     </div>
@@ -704,7 +751,8 @@ const CustomerDashboard = () => {
               {(() => {
                 const hasMedia =
                   (Array.isArray(b.photosBefore) && b.photosBefore.length > 0) ||
-                  (Array.isArray(b.photosAfter) && b.photosAfter.length > 0) ||
+                  (Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0) ||
+                  (Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0) ||
                   (Array.isArray(b.photosReturn) && b.photosReturn.length > 0);
                 if (!hasMedia) return null;
                 return (
@@ -720,20 +768,30 @@ const CustomerDashboard = () => {
                         <div className="space-y-4">
                           {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
                             <div>
-                              <div className="text-xs text-muted-foreground mb-2">Before Service</div>
+                              <div className="text-xs text-muted-foreground mb-2">Before Pickup</div>
                               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                                 {b.photosBefore.map((src, i) => (
-                                  <img key={`g-b-${i}`} src={src} alt="Before" className="w-full h-28 object-cover rounded border" />
+                                  <img key={`g-bp-${i}`} src={src} alt="Before pickup" className="w-full h-28 object-cover rounded border" />
                                 ))}
                               </div>
                             </div>
                           )}
-                          {Array.isArray(b.photosAfter) && b.photosAfter.length > 0 && (
+                          {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
+                            <div>
+                              <div className="text-xs text-muted-foreground mb-2">Before Service</div>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                {b.beforeServicePhotos.map((src, i) => (
+                                  <img key={`g-bs-${i}`} src={src} alt="Before service" className="w-full h-28 object-cover rounded border" />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
                             <div>
                               <div className="text-xs text-muted-foreground mb-2">After Service</div>
                               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                {b.photosAfter.map((src, i) => (
-                                  <img key={`g-a-${i}`} src={src} alt="After" className="w-full h-28 object-cover rounded border" />
+                                {b.afterServicePhotos.map((src, i) => (
+                                  <img key={`g-as-${i}`} src={src} alt="After service" className="w-full h-28 object-cover rounded border" />
                                 ))}
                               </div>
                             </div>
@@ -759,6 +817,72 @@ const CustomerDashboard = () => {
             </div>
           </motion.div>
         )}
+        <Dialog open={!!reviewBookingId} onOpenChange={(open) => {
+          if (!open) {
+            setReviewBookingId(null);
+          }
+        }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Review Service</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <Button
+                    key={n}
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className={n <= reviewRating ? "text-yellow-500" : "text-muted-foreground"}
+                    onClick={() => setReviewRating(n)}
+                  >
+                    <Star className="h-5 w-5" fill={n <= reviewRating ? "currentColor" : "none"} />
+                  </Button>
+                ))}
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">Comment</label>
+                <Input
+                  value={reviewComment}
+                  onChange={(e) => setReviewComment(e.target.value)}
+                  placeholder="Share your experience (optional)"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setReviewBookingId(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={async () => {
+                    if (!reviewBookingId) return;
+                    if (!Number.isFinite(reviewRating) || reviewRating < 1 || reviewRating > 5) {
+                      toast({ title: "Invalid rating", description: "Select between 1 and 5 stars.", variant: "destructive" });
+                      return;
+                    }
+                    try {
+                      await patchBookingApi(reviewBookingId, { action: "booking_rate", rating: reviewRating, comment: reviewComment });
+                      const list = await listApiBookings({ limit: 100 });
+                      setApiBookings(list);
+                      toast({ title: "Thanks for your review" });
+                      setReviewBookingId(null);
+                    } catch (err) {
+                      const msg = err instanceof Error ? err.message : String(err);
+                      toast({ title: "Failed to save review", description: msg, variant: "destructive" });
+                    }
+                  }}
+                >
+                  Submit Review
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
         {tab === "invoices" && (
           <motion.div {...fadeUp} transition={{ delay: 0.4 }} className="rounded-xl border bg-card p-6 shadow-card">
             <h2 className="font-heading text-xl font-bold">Invoices</h2>
@@ -780,8 +904,7 @@ const CustomerDashboard = () => {
                     const status = paid && typeof b.billTotal === "number" ? (paid >= b.billTotal ? "Paid" : "Generated") : (paid > 0 ? "Paid" : "Generated");
                     return { id, bookingId: b.id, customerEmail: email, amount, invoiceNo, status } as Invoice;
                   });
-                const localMine = invoices.filter((inv) => inv.customerEmail === email);
-                const rows = [...fromDb, ...localMine];
+                const rows = fromDb;
                 if (rows.length === 0) {
                   return <div className="rounded-lg border p-4 text-sm text-muted-foreground">No invoices yet</div>;
                 }

@@ -25,7 +25,6 @@ const StaffDashboard = () => {
   const [bookings, setBookings] = useState<ApiBooking[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [beforeFile, setBeforeFile] = useState<File | null>(null);
-  const [afterFile, setAfterFile] = useState<File | null>(null);
   const [returnFile, setReturnFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [online, setOnline] = useState<boolean>(false);
@@ -50,14 +49,18 @@ const StaffDashboard = () => {
       let current: ApiUser | null = null;
       try {
         current = await getCurrentUserFromApi();
+      } catch {
+        current = null;
+      }
+      try {
+        const u = await listUsersFromApi();
+        setUsers(u);
         if (!current) {
-          const u = await listUsersFromApi();
-          setUsers(u);
           if (session?.email) current = u.find((x) => x.email === session.email) || null;
           if (!current) current = u.find((x) => x.role === "staff") || null;
         }
       } catch {
-        current = null;
+        /* ignore user fetch error */
       }
       setMe(current);
       setOnline(!!current?.staffOnline);
@@ -115,6 +118,15 @@ const StaffDashboard = () => {
     [myTasks]
   );
   const availableTasks = useMemo(() => bookings.filter((b) => !b.staffId), [bookings]);
+  const myReviewedTasks = useMemo(() => {
+    const reviewed = myTasks.filter((t) => typeof t.ratingValue === "number");
+    reviewed.sort((a, b) => {
+      const ta = b.dropAt ? new Date(b.dropAt).getTime() : 0;
+      const tb = a.dropAt ? new Date(a.dropAt).getTime() : 0;
+      return ta - tb;
+    });
+    return reviewed.slice(0, 5);
+  }, [myTasks]);
   const iconDefaultProto = L.Icon.Default.prototype as unknown as { _getIconUrl?: () => string };
   delete iconDefaultProto._getIconUrl;
   L.Icon.Default.mergeOptions({
@@ -211,10 +223,7 @@ const StaffDashboard = () => {
       try { await patchBookingApi(b.id, { action: "staff_handover" }); } catch { /* ignore if already at centre */ }
       const next = await listApiBookings({ limit: 100 });
       setBookings(next);
-      if (b.merchantId) {
-        addNotificationForUser(b.merchantId, "Vehicle Arrived", `Booking ${b.service} is at service centre`);
-      }
-      toast({ title: "Handover at service centre", description: b.customerEmail });
+      toast({ title: "Reached merchant location", description: b.customerEmail });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       toast({ title: "Update failed", description: message, variant: "destructive" });
@@ -229,30 +238,12 @@ const StaffDashboard = () => {
       const next = await listApiBookings({ limit: 100 });
       setBookings(next);
       if (b.merchantId) {
-        addNotificationForUser(b.merchantId, "Vehicle Dropped", `Booking ${b.service} dropped at service centre`);
+        addNotificationForUser(b.merchantId, "Vehicle Dropped", `Vehicle dropped at service centre for ${b.service}`);
       }
-      toast({ title: "Dropped vehicle", description: b.customerEmail });
+      toast({ title: "Vehicle dropped at merchant", description: b.customerEmail });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       toast({ title: "Update failed", description: message, variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
-  }
-  async function uploadAfter(b: ApiBooking, picked?: File) {
-    const file = picked || afterFile;
-    if (!file) { toast({ title: "Upload required", description: "Choose an image file", variant: "destructive" }); return; }
-    const media = await toDataUrl(file);
-    setSaving(true);
-    try {
-      await patchBookingApi(b.id, { action: "add_photos", photosAfter: [media] });
-      const next = await listApiBookings({ limit: 100 });
-      setBookings(next);
-      setAfterFile(null);
-      toast({ title: "After media uploaded", description: b.customerEmail });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      toast({ title: "Upload failed", description: message, variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -312,12 +303,40 @@ const StaffDashboard = () => {
       setSaving(false);
     }
   }
-  const stats = [
-    { label: "Assigned Tasks", value: String(myTasks.length), icon: ClipboardList },
-    { label: "Completed", value: String(myTasks.filter((t) => String(t.status).toLowerCase() === "completed").length), icon: CheckCircle },
-    { label: "In Progress", value: String(myTasks.filter((t) => String(t.status).toLowerCase() === "in_progress").length), icon: Clock },
-    { label: "Awaiting Payment", value: String(myTasks.filter((t) => String(t.status).toLowerCase() === "awaiting_payment").length), icon: AlertCircle },
-  ];
+  const stats = useMemo(() => {
+    let assigned = 0;
+    let completed = 0;
+    let inProgress = 0;
+    let awaitingPayment = 0;
+    for (const t of myTasks) {
+      const status = String(t.status || "").toUpperCase();
+      const accepted = t.staffAcceptanceStatus === "accepted";
+      if (accepted && status !== "COMPLETED" && status !== "DELIVERED") {
+        assigned += 1;
+      }
+      if (status === "COMPLETED" || status === "DELIVERED") {
+        completed += 1;
+      }
+      if (
+        status === "PICKUP_CONFIRMED" ||
+        status === "IN_TRANSIT" ||
+        status === "AT_SERVICE_CENTER" ||
+        status === "WAITING_APPROVAL" ||
+        status === "SERVICE_IN_PROGRESS"
+      ) {
+        inProgress += 1;
+      }
+      if (status === "READY_FOR_DELIVERY") {
+        awaitingPayment += 1;
+      }
+    }
+    return [
+      { label: "Assigned Tasks", value: String(assigned), icon: ClipboardList },
+      { label: "Completed", value: String(completed), icon: CheckCircle },
+      { label: "In Progress", value: String(inProgress), icon: Clock },
+      { label: "Awaiting Payment", value: String(awaitingPayment), icon: AlertCircle },
+    ];
+  }, [myTasks]);
 
   return (
     <DashboardLayout role="staff">
@@ -571,6 +590,11 @@ const StaffDashboard = () => {
                           {(t.lastUpdatedByRole ? t.lastUpdatedByRole.charAt(0).toUpperCase() + t.lastUpdatedByRole.slice(1) : "System")} — {t.lastUpdatedMessage}
                         </div>
                       )}
+                      {typeof t.ratingValue === "number" && (
+                        <div className="text-xs text-muted-foreground">
+                          Rating: {t.ratingValue}/5 {t.ratingComment ? `• "${t.ratingComment}"` : ""}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       {t.staffAcceptanceStatus === "pending" ? (
@@ -702,186 +726,31 @@ const StaffDashboard = () => {
               )}
               </div>
             </motion.div>
-            {bookings.map((t) => {
-              const open = openId === t.id;
-              const lat = t.location?.lat;
-              const lng = t.location?.lng;
-              const hasBefore = Array.isArray(t.photosBefore) && t.photosBefore.length > 0;
-              return (
-                <Dialog key={`dlg-${t.id}`} open={open} onOpenChange={(v) => setOpenId(v ? t.id : null)}>
-                  <DialogTrigger asChild><span /></DialogTrigger>
-                  <DialogContent className="max-w-3xl">
-                    <DialogHeader><DialogTitle>Order Details</DialogTitle></DialogHeader>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <div className="text-sm">Type: {t.service}</div>
-                        <div className="text-sm">Vehicle: {t.vehicle === "bike" ? "Bike" : "Car"}</div>
-                        <div className="text-sm">Registration: {t.registration || "-"}</div>
-                        <div className="text-sm">Customer: {t.customerEmail}</div>
-                        <div className="text-sm">Status: {String(t.status).toUpperCase()}</div>
-                        <div className="space-y-2">
-                          <h4 className="font-medium">Work Checklist</h4>
-                          <ul className="text-sm list-disc ml-5">
-                            {checklistFor(t.service).map((x) => (<li key={x}>{x}</li>))}
-                          </ul>
-                        </div>
-                        <div className="flex flex-wrap gap-2 pt-2">
-                          <Button variant="outline" size="sm" onClick={() => { window.open(`tel:${t.customerPhone || ""}`); void logCall(t); }}>
-                            <Phone className="mr-2 h-4 w-4" /> Call Customer
-                          </Button>
-                        {(() => {
-                          const su = String(t.status).toUpperCase();
-                          if (su === "COMPLETED" || su === "DELIVERED") return null;
-                          return (lat !== undefined && lng !== undefined) ? (
-                            <Button variant="outline" size="sm" onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, "_blank")}>
-                              <Navigation className="mr-2 h-4 w-4" /> Navigate
-                            </Button>
-                          ) : null;
-                        })()}
-                        </div>
-                      </div>
-                      <div className="space-y-3">
-                        {(() => {
-                          const su = String(t.status).toUpperCase();
-                          if (su === "COMPLETED" || su === "DELIVERED") {
-                            return <div className="rounded-lg border p-3 text-sm text-muted-foreground">Service completed — location hidden</div>;
-                          }
-                          return (lat !== undefined && lng !== undefined) ? (
-                          <div className="rounded-lg border p-3 text-sm">
-                            Location: {lat.toFixed(6)}, {lng.toFixed(6)}
-                          </div>
-                          ) : (
-                          <div className="rounded-lg border p-3 text-sm text-muted-foreground">No location available</div>
-                          );
-                        })()}
-                        <div className="space-y-2">
-                          <div className="text-sm font-medium">Arrival</div>
-                          <div className="flex items-center gap-2">
-                            <Button size="sm" disabled={saving || String(t.status).toUpperCase() !== "ASSIGNED"} onClick={() => confirmPickup(t)}>
-                              <CheckCircle2 className="mr-2 h-4 w-4" /> Reached Customer
-                            </Button>
-                          </div>
-                        </div>
-                        {String(t.status).toUpperCase() === "PICKUP_CONFIRMED" && (
-                          <div className="space-y-2">
-                            <div className="text-sm font-medium">Before Pickup Image</div>
-                            <input id={`before-${t.id}`} className="hidden" type="file" accept="image/*" onChange={(e) => {
-                              const f = e.target.files?.[0] || null;
-                              setBeforeFile(f);
-                              if (f) {
-                                void uploadBefore(t, f);
-                              }
-                            }} />
-                            <Button size="sm" disabled={saving} onClick={() => {
-                              const el = document.getElementById(`before-${t.id}`) as HTMLInputElement | null;
-                              el?.click();
-                            }}>{saving ? "Uploading..." : "Upload Before Image"}</Button>
-                            <Button size="sm" className="mt-2" disabled={!hasBefore || saving} onClick={() => markInTransit(t)}>
-                              Mark In Transit
-                            </Button>
-                          </div>
-                        )}
-                        {/* Navigate to Merchant moved below after-image section */}
-                        {(() => {
-                          const su = String(t.status).toUpperCase();
-                          const showAfter = su === "IN_TRANSIT" || su === "AT_SERVICE_CENTER" || su === "WAITING_APPROVAL" || su === "SERVICE_IN_PROGRESS" || su === "READY_FOR_DELIVERY";
-                          return showAfter ? (
-                            <div className="space-y-2">
-                              {(String(t.status).toUpperCase() === "IN_TRANSIT" || String(t.status).toUpperCase() === "AT_SERVICE_CENTER") && (
-                                <div className="space-y-2">
-                                  <div className="text-sm font-medium">Navigate to Merchant</div>
-                                  <div className="flex items-center gap-2">
-                                    {(() => {
-                                      const m = merchantFor(t);
-                                      const ml = m?.location;
-                                      return ml && ml.lat !== undefined && ml.lng !== undefined ? (
-                                        <Button variant="outline" size="sm" onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${ml.lat},${ml.lng}`, "_blank")}>
-                                          <Navigation className="mr-2 h-4 w-4" /> To Service Centre
-                                        </Button>
-                                      ) : (
-                                        <span className="text-xs text-muted-foreground">Merchant location unavailable</span>
-                                      );
-                                    })()}
-                                  </div>
-                                </div>
-                              )}
-                              <div className="text-sm font-medium">After Pickup Image</div>
-                              <input id={`after-${t.id}`} className="hidden" type="file" accept="image/*" onChange={(e) => {
-                                const f = e.target.files?.[0] || null;
-                                setAfterFile(f);
-                                if (f) {
-                                  void uploadAfter(t, f);
-                                }
-                              }} />
-                              <Button size="sm" disabled={saving} onClick={() => {
-                                const el = document.getElementById(`after-${t.id}`) as HTMLInputElement | null;
-                                el?.click();
-                              }}>{saving ? "Uploading..." : "Upload After Image"}</Button>
-                              <div>
-                                <Button size="sm" className="mt-2" disabled={saving || String(t.status).toUpperCase() !== "IN_TRANSIT"} onClick={() => handoverToMerchant(t)}>
-                                  Reached Merchant
-                                </Button>
-                              </div>
-                              <div>
-                                {su === "AT_SERVICE_CENTER" || su === "WAITING_APPROVAL" || su === "SERVICE_IN_PROGRESS" ? (
-                                  <Button size="sm" className="mt-2" variant="outline" onClick={async () => {
-                                    await dropVehicle(t);
-                                  }}>Dropped Vehicle</Button>
-                                ) : null}
-                              </div>
-                            </div>
-                          ) : null;
-                        })()}
-                        {(String(t.status).toUpperCase() === "READY_FOR_DELIVERY" || String(t.status).toUpperCase() === "DELIVERED") && (
-                          <div className="space-y-2">
-                            <div className="text-sm font-medium">Return Media</div>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(e) => {
-                                  const f = e.target.files?.[0] || null;
-                                  setReturnFile(f);
-                                  if (f) {
-                                    void uploadReturn(t, f);
-                                  }
-                                }}
-                              />
-                            </div>
-                          </div>
-                        )}
-                        {/* Estimate Sheet removed as requested */}
-                        {Array.isArray(t.payments) && t.payments.length > 0 && (
-                          <div className="space-y-1">
-                            <div className="text-sm font-medium">Payments</div>
-                            <div className="flex flex-col gap-1">
-                              {t.payments.slice(-3).map((p, i) => (
-                                <div key={`spay-${i}`} className="text-xs text-muted-foreground">
-                                  ₹{Number(p.amount || 0)} • {p.method || "-"} {p.byRole ? `• ${p.byRole}` : ""} {p.time ? `• ${new Date(p.time).toLocaleString()}` : ""}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {(() => {
-                          const su = String(t.status).toUpperCase();
-                          if (su === "READY_FOR_DELIVERY" || su === "DELIVERED") {
-                            return (
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-2">
-                                  <Button size="sm" onClick={() => confirmPayment(t)}>Confirm Payment</Button>
-                                </div>
-                              </div>
-                            );
-                          }
-                          return null;
-                        })()}
+            <motion.div {...fadeUp} transition={{ delay: 0.6 }} className="rounded-xl border bg-card p-6 shadow-card">
+              <h2 className="font-heading text-xl font-bold">Customer Reviews</h2>
+              <div className="mt-4 space-y-3">
+                {myReviewedTasks.length === 0 && (
+                  <div className="rounded-lg border p-4 text-sm text-muted-foreground">No reviews yet</div>
+                )}
+                {myReviewedTasks.map((t) => (
+                  <div key={`review-${t.id}`} className="flex flex-col gap-2 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="font-medium">{t.service}</div>
+                      <div className="text-xs text-muted-foreground">{t.customerEmail}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Rating: {t.ratingValue}/5 {t.ratingComment ? `• "${t.ratingComment}"` : ""}
                       </div>
                     </div>
-                  </DialogContent>
-                </Dialog>
-              );
-            })}
+                    <div className="flex items-center gap-2">
+                      {t.dropAt && (
+                        <span className="text-xs text-muted-foreground">{new Date(t.dropAt).toLocaleString()}</span>
+                      )}
+                      <Badge variant="outline">{t.status}</Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
           </>
         )}
         {tab === "bookings" && (
@@ -913,6 +782,186 @@ const StaffDashboard = () => {
             <div className="mt-4 rounded-lg border p-4 text-sm text-muted-foreground">Profile and preferences</div>
           </motion.div>
         )}
+        {bookings.map((t) => {
+          const open = openId === t.id;
+          const lat = t.location?.lat;
+          const lng = t.location?.lng;
+          const hasBefore = Array.isArray(t.photosBefore) && t.photosBefore.length > 0;
+          return (
+            <Dialog key={`dlg-${t.id}`} open={open} onOpenChange={(v) => setOpenId(v ? t.id : null)}>
+              <DialogTrigger asChild><span /></DialogTrigger>
+              <DialogContent className="max-w-3xl">
+                <DialogHeader><DialogTitle>Order Details</DialogTitle></DialogHeader>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <div className="text-sm">Type: {t.service}</div>
+                    <div className="text-sm">Vehicle: {t.vehicle === "bike" ? "Bike" : "Car"}</div>
+                    <div className="text-sm">Registration: {t.registration || "-"}</div>
+                    <div className="text-sm">Customer: {t.customerEmail}</div>
+                    <div className="text-sm">Status: {String(t.status).toUpperCase()}</div>
+                    <div className="space-y-2">
+                      <h4 className="font-medium">Work Checklist</h4>
+                      <ul className="text-sm list-disc ml-5">
+                        {checklistFor(t.service).map((x) => (<li key={x}>{x}</li>))}
+                      </ul>
+                    </div>
+                    <div className="flex flex-wrap gap-2 pt-2">
+                      <Button variant="outline" size="sm" onClick={() => { window.open(`tel:${t.customerPhone || ""}`); void logCall(t); }}>
+                        <Phone className="mr-2 h-4 w-4" /> Call Customer
+                      </Button>
+                      {(() => {
+                        const su = String(t.status).toUpperCase();
+                        if (su === "COMPLETED" || su === "DELIVERED") return null;
+                        return (lat !== undefined && lng !== undefined) ? (
+                          <Button variant="outline" size="sm" onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, "_blank")}>
+                            <Navigation className="mr-2 h-4 w-4" /> Navigate
+                          </Button>
+                        ) : null;
+                      })()}
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {(() => {
+                      const su = String(t.status).toUpperCase();
+                      if (su === "COMPLETED" || su === "DELIVERED") {
+                        return <div className="rounded-lg border p-3 text-sm text-muted-foreground">Service completed — location hidden</div>;
+                      }
+                      return (lat !== undefined && lng !== undefined) ? (
+                        <div className="rounded-lg border p-3 text-sm">
+                          Location: {lat.toFixed(6)}, {lng.toFixed(6)}
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border p-3 text-sm text-muted-foreground">No location available</div>
+                      );
+                    })()}
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium">Arrival</div>
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" disabled={saving || String(t.status).toUpperCase() !== "ASSIGNED"} onClick={() => confirmPickup(t)}>
+                          <CheckCircle2 className="mr-2 h-4 w-4" /> Reached Customer
+                        </Button>
+                      </div>
+                    </div>
+                    {String(t.status).toUpperCase() === "PICKUP_CONFIRMED" && (
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">Before Pickup Image</div>
+                        <input id={`before-${t.id}`} className="hidden" type="file" accept="image/*" onChange={(e) => {
+                          const f = e.target.files?.[0] || null;
+                          setBeforeFile(f);
+                          if (f) {
+                            void uploadBefore(t, f);
+                          }
+                        }} />
+                        <Button size="sm" disabled={saving} onClick={() => {
+                          const el = document.getElementById(`before-${t.id}`) as HTMLInputElement | null;
+                          el?.click();
+                        }}>{saving ? "Uploading..." : "Upload Before Image"}</Button>
+                        <Button size="sm" className="mt-2" disabled={!hasBefore || saving} onClick={() => markInTransit(t)}>
+                          Pickup
+                        </Button>
+                      </div>
+                    )}
+                    {(() => {
+                      const su = String(t.status).toUpperCase();
+                      const showSection = su === "IN_TRANSIT" || su === "AT_SERVICE_CENTER" || su === "WAITING_APPROVAL" || su === "SERVICE_IN_PROGRESS" || su === "READY_FOR_DELIVERY";
+                      if (!showSection) return null;
+                      return (
+                        <div className="space-y-2">
+                          {(su === "IN_TRANSIT" || su === "AT_SERVICE_CENTER") && (
+                            <div className="space-y-2">
+                              <div className="text-sm font-medium">Reach Merchant Location</div>
+                              <div className="flex items-center gap-2">
+                                {(() => {
+                                  const m = merchantFor(t);
+                                  const ml = m?.location;
+                                  if (ml && ml.lat !== undefined && ml.lng !== undefined) {
+                                    return (
+                                      <Button variant="outline" size="sm" onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${ml.lat},${ml.lng}`, "_blank")}>
+                                        <Navigation className="mr-2 h-4 w-4" /> Merchant Location
+                                      </Button>
+                                    );
+                                  }
+                                  return <span className="text-xs text-muted-foreground">Merchant location unavailable</span>;
+                                })()}
+                              </div>
+                            </div>
+                          )}
+                          <div>
+                            <Button
+                              size="sm"
+                              className="mt-2"
+                              disabled={saving || su !== "IN_TRANSIT"}
+                              onClick={() => handoverToMerchant(t)}
+                            >
+                              Reached Merchant Location
+                            </Button>
+                          </div>
+                          <div>
+                            {(su === "AT_SERVICE_CENTER" || su === "WAITING_APPROVAL" || su === "SERVICE_IN_PROGRESS") && (
+                              <Button
+                                size="sm"
+                                className="mt-2"
+                                variant="outline"
+                                onClick={async () => {
+                                  await dropVehicle(t);
+                                }}
+                              >
+                                Drop Location
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {(String(t.status).toUpperCase() === "READY_FOR_DELIVERY" || String(t.status).toUpperCase() === "DELIVERED") && (
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">Return Media</div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0] || null;
+                              setReturnFile(f);
+                              if (f) {
+                                void uploadReturn(t, f);
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {Array.isArray(t.payments) && t.payments.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="text-sm font-medium">Payments</div>
+                        <div className="flex flex-col gap-1">
+                          {t.payments.slice(-3).map((p, i) => (
+                            <div key={`spay-${i}`} className="text-xs text-muted-foreground">
+                              ₹{Number(p.amount || 0)} • {p.method || "-"} {p.byRole ? `• ${p.byRole}` : ""} {p.time ? `• ${new Date(p.time).toLocaleString()}` : ""}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {(() => {
+                      const su = String(t.status).toUpperCase();
+                      if (su === "READY_FOR_DELIVERY" || su === "DELIVERED") {
+                        return (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Button size="sm" onClick={() => confirmPayment(t)}>Confirm Payment</Button>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          );
+        })}
         </div>
       </ErrorBoundary>
     </DashboardLayout>

@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap, type MapContainerProps } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { useToast } from "@/hooks/use-toast";
 
 const fadeUp = { initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.4 } };
 
@@ -16,6 +17,7 @@ const BookDateTime = () => {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { toast } = useToast();
   const vehicle = params.get("vehicle") || "car";
   const service = params.get("service") || "Service";
   const price = params.get("price") || "";
@@ -135,15 +137,42 @@ const BookDateTime = () => {
             </MapContainer>
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => {
-              if ("geolocation" in navigator) {
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (!("geolocation" in navigator)) {
+                  toast({ title: "Location unavailable", description: "Your browser does not support location access.", variant: "destructive" });
+                  return;
+                }
                 navigator.geolocation.getCurrentPosition(
-                  (pos) => setCustPos([pos.coords.latitude, pos.coords.longitude]),
-                  () => {/* ignore */},
-                  { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+                  (pos) => {
+                    const { latitude, longitude } = pos.coords;
+                    setCustPos([latitude, longitude]);
+                    setAddr((prev) => (prev && prev.trim().length > 0 ? prev : `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`));
+                  },
+                  (err) => {
+                    const code = typeof err.code === "number" ? err.code : -1;
+                    if (code === 3 && custPos) {
+                      return;
+                    }
+                    const message =
+                      code === 1
+                        ? "Location permission denied. Please allow access in your browser."
+                        : code === 2
+                        ? "Location unavailable. Try again in an open area."
+                        : code === 3
+                        ? "Getting location timed out. Please try again."
+                        : "Could not fetch your location.";
+                    toast({ title: "Location error", description: message, variant: "destructive" });
+                  },
+                  { enableHighAccuracy: true, timeout: 20000, maximumAge: 300000 },
                 );
-              }
-            }}>Use My Location</Button>
+              }}
+            >
+              Use My Location
+            </Button>
             {custPos && <span className="text-xs text-muted-foreground">Selected: {custPos[0].toFixed(5)}, {custPos[1].toFixed(5)}</span>}
           </div>
         </motion.div>

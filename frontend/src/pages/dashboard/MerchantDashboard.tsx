@@ -57,6 +57,14 @@ const MerchantDashboard = () => {
     }
     return { totalPaid: paid, totalPending: pending, thisMonthPaid: monthPaid };
   }, [bookings]);
+  async function toDataUrl(file: File): Promise<string> {
+    return await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error("Read failed"));
+      r.readAsDataURL(file);
+    });
+  }
   useEffect(() => {
     (async () => {
       const session = getAuth();
@@ -168,21 +176,57 @@ const MerchantDashboard = () => {
       { label: "Rating", value: avg !== null ? avg.toFixed(1) : "-", icon: Star },
     ];
   }, [myBookings, mstats]);
+  const recentReviews = useMemo(() => {
+    const reviewed = myBookings.filter((b) => typeof b.ratingValue === "number");
+    reviewed.sort((a, b) => {
+      const ta = b.dropAt ? new Date(b.dropAt).getTime() : 0;
+      const tb = a.dropAt ? new Date(a.dropAt).getTime() : 0;
+      return ta - tb;
+    });
+    return reviewed.slice(0, 5);
+  }, [myBookings]);
   return (
     <DashboardLayout role="merchant">
       <div className="space-y-6">
         <motion.h1 {...fadeUp} className="font-heading text-3xl font-bold">{tab === "my-profile" ? "My Profile" : "Merchant Dashboard"}</motion.h1>
 
         {tab === "dashboard" && (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {statsCards.map((s, i) => (
-              <motion.div key={s.label} {...fadeUp} transition={{ delay: i * 0.1 }} className="rounded-xl border bg-card p-5 shadow-card">
-                <s.icon className="h-8 w-8 text-accent" />
-                <div className="mt-3 font-heading text-2xl font-bold">{s.value}</div>
-                <div className="text-sm text-muted-foreground">{s.label}</div>
-              </motion.div>
-            ))}
-          </div>
+          <>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {statsCards.map((s, i) => (
+                <motion.div key={s.label} {...fadeUp} transition={{ delay: i * 0.1 }} className="rounded-xl border bg-card p-5 shadow-card">
+                  <s.icon className="h-8 w-8 text-accent" />
+                  <div className="mt-3 font-heading text-2xl font-bold">{s.value}</div>
+                  <div className="text-sm text-muted-foreground">{s.label}</div>
+                </motion.div>
+              ))}
+            </div>
+            <motion.div {...fadeUp} transition={{ delay: 0.25 }} className="rounded-xl border bg-card p-6 shadow-card">
+              <h2 className="font-heading text-xl font-bold">Recent Reviews</h2>
+              <div className="mt-4 space-y-3">
+                {recentReviews.length === 0 && (
+                  <div className="rounded-lg border p-4 text-sm text-muted-foreground">No reviews yet</div>
+                )}
+                {recentReviews.map((b) => (
+                  <div key={b.id} className="flex flex-col gap-2 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="font-medium">{b.customerEmail}</div>
+                      <div className="text-xs text-muted-foreground">{(b.vehicle === "bike" ? "Bike" : "Car")} — {b.service}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Rating: {b.ratingValue}/5 {b.ratingComment ? `• "${b.ratingComment}"` : ""}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {b.dropAt && (
+                        <span className="text-xs text-muted-foreground">{new Date(b.dropAt).toLocaleString()}</span>
+                      )}
+                      <Badge variant="outline">{b.status}</Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </>
         )}
 
         {tab === "my-profile" && (
@@ -227,49 +271,49 @@ const MerchantDashboard = () => {
                     })()}
                   {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
                     <div className="mt-2">
-                      <div className="text-xs text-muted-foreground mb-1">Before Service</div>
+                      <div className="text-xs text-muted-foreground mb-1">Before Pickup</div>
                       <div className="flex flex-wrap gap-2">
                         {b.photosBefore.slice(0, 4).map((src, i) => (
-                          <Dialog key={`before-${i}`}>
+                          <Dialog key={`bp-${i}`}>
                             <DialogTrigger asChild>
-                              <img src={src} alt="Before" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
+                              <img src={src} alt="Before pickup" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
                             </DialogTrigger>
                             <DialogContent className="max-w-3xl p-0">
-                              <img src={src} alt="Before Full" className="w-full h-auto rounded" />
+                              <img src={src} alt="Before pickup full" className="w-full h-auto rounded" />
                             </DialogContent>
                           </Dialog>
                         ))}
                       </div>
                     </div>
                   )}
-                  {Array.isArray(b.photosAfter) && b.photosAfter.length > 0 && (
+                  {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
+                    <div className="mt-2">
+                      <div className="text-xs text-muted-foreground mb-1">Before Service</div>
+                      <div className="flex flex-wrap gap-2">
+                        {b.beforeServicePhotos.slice(0, 4).map((src, i) => (
+                          <Dialog key={`bs-${i}`}>
+                            <DialogTrigger asChild>
+                              <img src={src} alt="Before service" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
+                            </DialogTrigger>
+                            <DialogContent className="max-w-3xl p-0">
+                              <img src={src} alt="Before service full" className="w-full h-auto rounded" />
+                            </DialogContent>
+                          </Dialog>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
                     <div className="mt-2">
                       <div className="text-xs text-muted-foreground mb-1">After Service</div>
                       <div className="flex flex-wrap gap-2">
-                        {b.photosAfter.slice(0, 4).map((src, i) => (
-                          <Dialog key={`after-${i}`}>
+                        {b.afterServicePhotos.slice(0, 4).map((src, i) => (
+                          <Dialog key={`as-${i}`}>
                             <DialogTrigger asChild>
-                              <img src={src} alt="After" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
+                              <img src={src} alt="After service" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
                             </DialogTrigger>
                             <DialogContent className="max-w-3xl p-0">
-                              <img src={src} alt="After Full" className="w-full h-auto rounded" />
-                            </DialogContent>
-                          </Dialog>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {Array.isArray(b.photosReturn) && b.photosReturn.length > 0 && (
-                    <div className="mt-2">
-                      <div className="text-xs text-muted-foreground mb-1">Return</div>
-                      <div className="flex flex-wrap gap-2">
-                        {b.photosReturn.slice(0, 4).map((src, i) => (
-                          <Dialog key={`ret-${i}`}>
-                            <DialogTrigger asChild>
-                              <img src={src} alt="Return" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
-                            </DialogTrigger>
-                            <DialogContent className="max-w-3xl p-0">
-                              <img src={src} alt="Return Full" className="w-full h-auto rounded" />
+                              <img src={src} alt="After service full" className="w-full h-auto rounded" />
                             </DialogContent>
                           </Dialog>
                         ))}
@@ -279,6 +323,11 @@ const MerchantDashboard = () => {
                     {typeof b.estimateTotal === "number" && (
                       <div className="text-xs text-muted-foreground">
                         Estimate: ₹{(b.estimateLabour || 0)} + ₹{(b.estimateParts || 0)} + ₹{(b.estimateAdditional || 0)} = ₹{b.estimateTotal}
+                      </div>
+                    )}
+                    {typeof b.ratingValue === "number" && (
+                      <div className="text-xs text-muted-foreground">
+                        Rating: {b.ratingValue}/5 {b.ratingComment ? `• "${b.ratingComment}"` : ""}
                       </div>
                     )}
                     {b.lastUpdatedMessage && (
@@ -310,10 +359,101 @@ const MerchantDashboard = () => {
                       <span className="text-xs text-muted-foreground">Dropped: {new Date(b.dropAt).toLocaleString()}</span>
                     )}
                     <Badge variant={String(b.status).toLowerCase() === "approved" ? "secondary" : String(b.status).toLowerCase() === "pending" ? "default" : String(b.status).toLowerCase() === "rejected" ? "destructive" : "outline"}>{b.status}</Badge>
+                    <input
+                      id={`before-service-files-${b.id}`}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={async (e) => {
+                        const files = e.target.files ? Array.from(e.target.files) : [];
+                        if (!files.length) return;
+                        try {
+                          const media: string[] = [];
+                          for (const f of files) {
+                            media.push(await toDataUrl(f));
+                          }
+                          await patchBookingApi(b.id, { action: "merchant_upload_before_service_media", beforeServicePhotos: media });
+                          const next = await listApiBookings({ limit: 100 });
+                          setBookings(next);
+                          toast({ title: "Before service images uploaded", description: b.customerEmail });
+                        } catch (err) {
+                          const message = err instanceof Error ? err.message : String(err);
+                          toast({ title: "Upload failed", description: message, variant: "destructive" });
+                        } finally {
+                          e.target.value = "";
+                        }
+                      }}
+                    />
+                    <input
+                      id={`after-service-files-${b.id}`}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={async (e) => {
+                        const files = e.target.files ? Array.from(e.target.files) : [];
+                        if (!files.length) return;
+                        try {
+                          const media: string[] = [];
+                          for (const f of files) {
+                            media.push(await toDataUrl(f));
+                          }
+                          await patchBookingApi(b.id, { action: "merchant_upload_after_service_media", afterServicePhotos: media });
+                          const next = await listApiBookings({ limit: 100 });
+                          setBookings(next);
+                          toast({ title: "After service images uploaded", description: b.customerEmail });
+                        } catch (err) {
+                          const message = err instanceof Error ? err.message : String(err);
+                          toast({ title: "Upload failed", description: message, variant: "destructive" });
+                        } finally {
+                          e.target.value = "";
+                        }
+                      }}
+                    />
+                    {(() => {
+                      const statusUpper = String(b.status || "").toUpperCase();
+                      const canUploadBefore =
+                        statusUpper === "AT_SERVICE_CENTER" ||
+                        statusUpper === "WAITING_APPROVAL" ||
+                        statusUpper === "SERVICE_IN_PROGRESS";
+                      const canUploadAfter =
+                        statusUpper === "SERVICE_IN_PROGRESS" ||
+                        statusUpper === "READY_FOR_DELIVERY";
+                      return (
+                        <>
+                          {canUploadBefore && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const el = document.getElementById(`before-service-files-${b.id}`) as HTMLInputElement | null;
+                                el?.click();
+                              }}
+                            >
+                              Upload Before Service
+                            </Button>
+                          )}
+                          {canUploadAfter && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const el = document.getElementById(`after-service-files-${b.id}`) as HTMLInputElement | null;
+                                el?.click();
+                              }}
+                            >
+                              Upload After Service
+                            </Button>
+                          )}
+                        </>
+                      );
+                    })()}
                     {(() => {
                       const hasMedia =
                         (Array.isArray(b.photosBefore) && b.photosBefore.length > 0) ||
-                        (Array.isArray(b.photosAfter) && b.photosAfter.length > 0) ||
+                        (Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0) ||
+                        (Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0) ||
                         (Array.isArray(b.photosReturn) && b.photosReturn.length > 0);
                       if (!hasMedia) return null;
                       return (
@@ -328,20 +468,30 @@ const MerchantDashboard = () => {
                             <div className="space-y-4">
                               {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
                                 <div>
-                                  <div className="text-xs text-muted-foreground mb-2">Before Service</div>
+                                  <div className="text-xs text-muted-foreground mb-2">Before Pickup</div>
                                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                                     {b.photosBefore.map((src, i) => (
-                                      <img key={`mg-b-${i}`} src={src} alt="Before" className="w-full h-28 object-cover rounded border" />
+                                      <img key={`mg-bp-${i}`} src={src} alt="Before pickup" className="w-full h-28 object-cover rounded border" />
                                     ))}
                                   </div>
                                 </div>
                               )}
-                              {Array.isArray(b.photosAfter) && b.photosAfter.length > 0 && (
+                              {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
+                                <div>
+                                  <div className="text-xs text-muted-foreground mb-2">Before Service</div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                    {b.beforeServicePhotos.map((src, i) => (
+                                      <img key={`mg-bs-${i}`} src={src} alt="Before service" className="w-full h-28 object-cover rounded border" />
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
                                 <div>
                                   <div className="text-xs text-muted-foreground mb-2">After Service</div>
                                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                    {b.photosAfter.map((src, i) => (
-                                      <img key={`mg-a-${i}`} src={src} alt="After" className="w-full h-28 object-cover rounded border" />
+                                    {b.afterServicePhotos.map((src, i) => (
+                                      <img key={`mg-as-${i}`} src={src} alt="After service" className="w-full h-28 object-cover rounded border" />
                                     ))}
                                   </div>
                                 </div>

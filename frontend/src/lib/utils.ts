@@ -554,6 +554,8 @@ export type ApiBooking = {
   photosBefore?: string[];
   photosAfter?: string[];
   photosReturn?: string[];
+  beforeServicePhotos?: string[];
+  afterServicePhotos?: string[];
   price?: number;
   billTotal?: number;
   estimateLabour?: number;
@@ -579,9 +581,8 @@ export async function createBookingApi(input: { customerEmail: string; customerP
   let lastErr = "Failed to create booking";
   for (const url of endpoints) {
     try {
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
       let data: unknown = null;
@@ -593,6 +594,9 @@ export async function createBookingApi(input: { customerEmail: string; customerP
       }
       const obj = data as { booking?: { id?: unknown } };
       if (res.ok && obj && obj.booking && obj.booking.id) {
+        bookingsCache = null;
+        bookingsCachePromise = null;
+        clearBookingsStorage();
         return String(obj.booking.id || "");
       }
       lastErr =
@@ -609,6 +613,62 @@ type BookingsCacheEntry = { key: string; at: number; value: ApiBooking[] };
 let bookingsCache: BookingsCacheEntry | null = null;
 let bookingsCachePromise: { key: string; promise: Promise<ApiBooking[]> } | null = null;
 const BOOKINGS_TTL_MS = 5000;
+const BOOKINGS_STORAGE_KEY = "bookings_api_cache_v1";
+
+function loadBookingsCacheFromStorage(expectedKey: string) {
+  if (bookingsCache) return;
+  if (typeof window === "undefined" || typeof window.localStorage === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(BOOKINGS_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as BookingsCacheEntry;
+    if (!parsed || parsed.key !== expectedKey || !Array.isArray(parsed.value)) return;
+    bookingsCache = { key: parsed.key, at: Date.now(), value: parsed.value };
+  } catch {
+    return;
+  }
+}
+
+function saveBookingsCacheToStorage(entry: BookingsCacheEntry) {
+  if (typeof window === "undefined" || typeof window.localStorage === "undefined") return;
+  try {
+    window.localStorage.setItem(BOOKINGS_STORAGE_KEY, JSON.stringify(entry));
+  } catch {
+    return;
+  }
+}
+
+function clearBookingsStorage() {
+  if (typeof window === "undefined" || typeof window.localStorage === "undefined") return;
+  try {
+    window.localStorage.removeItem(BOOKINGS_STORAGE_KEY);
+  } catch {
+    return;
+  }
+}
+
+export function getCachedApiBookings(params?: { email?: string; limit?: number }): ApiBooking[] {
+  const qs = new URLSearchParams();
+  const session = getAuth();
+  const email = params?.email || session?.email;
+  if (email) qs.set("email", email);
+  if (session?.role) qs.set("role", session.role);
+  const lim = params?.limit;
+  if (typeof lim === "number" && Number.isFinite(lim) && lim > 0) {
+    qs.set("limit", String(Math.min(Math.floor(lim), 200)));
+  } else if (session?.role === "Admin") {
+    qs.set("limit", "100");
+  }
+  const suffix = qs.toString();
+  const key = suffix || "all";
+  if (!bookingsCache || bookingsCache.key !== key) {
+    loadBookingsCacheFromStorage(key);
+  }
+  if (bookingsCache && bookingsCache.key === key) {
+    return bookingsCache.value;
+  }
+  return [];
+}
 
 export async function listApiBookings(params?: { email?: string; limit?: number }): Promise<ApiBooking[]> {
   const qs = new URLSearchParams();
@@ -625,6 +685,9 @@ export async function listApiBookings(params?: { email?: string; limit?: number 
   const suffix = qs.toString();
   const key = suffix || "all";
   const now = Date.now();
+  if (!bookingsCache) {
+    loadBookingsCacheFromStorage(key);
+  }
   if (bookingsCache && bookingsCache.key === key && now - bookingsCache.at < BOOKINGS_TTL_MS) {
     return bookingsCache.value;
   }
@@ -700,6 +763,8 @@ export async function listApiBookings(params?: { email?: string; limit?: number 
               photosBefore: r.photosBefore as string[] | undefined,
               photosAfter: r.photosAfter as string[] | undefined,
               photosReturn: (r as Record<string, unknown>).photosReturn as string[] | undefined,
+              beforeServicePhotos: (r as Record<string, unknown>).beforeServicePhotos as string[] | undefined,
+              afterServicePhotos: (r as Record<string, unknown>).afterServicePhotos as string[] | undefined,
               price: typeof r.price === "number" ? (r.price as number) : undefined,
               billTotal: ((): number | undefined => {
                 const v = (r as Record<string, unknown>).billTotal;
@@ -777,6 +842,7 @@ export async function listApiBookings(params?: { email?: string; limit?: number 
   try {
     const result = await task;
     bookingsCache = { key, at: Date.now(), value: result };
+    saveBookingsCacheToStorage(bookingsCache);
     bookingsCachePromise = null;
     return result;
   } catch (e) {
@@ -810,6 +876,9 @@ export async function patchBookingApi(id: string, payload: Record<string, unknow
         parsed = false;
       }
       if (res.ok && data && data.ok) {
+        bookingsCache = null;
+        bookingsCachePromise = null;
+        clearBookingsStorage();
         return;
       }
       lastErr =
@@ -871,9 +940,77 @@ let merchantStatsCache: MerchantDashboardStats | null = null;
 let merchantStatsCacheTime = 0;
 let merchantStatsPromise: Promise<MerchantDashboardStats> | null = null;
 const DASHBOARD_STATS_TTL_MS = 10000;
+const ADMIN_STATS_STORAGE_KEY = "admin_dashboard_stats_v1";
+const MERCHANT_STATS_STORAGE_KEY = "merchant_dashboard_stats_v1";
+
+function loadAdminStatsFromStorage() {
+  if (adminStatsCache) return;
+  if (typeof window === "undefined" || typeof window.localStorage === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(ADMIN_STATS_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as AdminDashboardStats & { cachedAt?: number };
+    if (!parsed || typeof parsed.totalUsers !== "number") return;
+    adminStatsCache = {
+      totalUsers: parsed.totalUsers,
+      activeBookings: parsed.activeBookings,
+      revenue: parsed.revenue,
+      onlineStaffCount: parsed.onlineStaffCount,
+      updatedAt: parsed.updatedAt,
+    };
+    adminStatsCacheTime = parsed.cachedAt || Date.now();
+  } catch {
+    return;
+  }
+}
+
+function saveAdminStatsToStorage(stats: AdminDashboardStats) {
+  if (typeof window === "undefined" || typeof window.localStorage === "undefined") return;
+  try {
+    const payload = { ...stats, cachedAt: Date.now() };
+    window.localStorage.setItem(ADMIN_STATS_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    return;
+  }
+}
+
+function loadMerchantStatsFromStorage() {
+  if (merchantStatsCache) return;
+  if (typeof window === "undefined" || typeof window.localStorage === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(MERCHANT_STATS_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as MerchantDashboardStats & { cachedAt?: number };
+    if (!parsed || typeof parsed.totalBookings !== "number") return;
+    merchantStatsCache = {
+      activeServices: parsed.activeServices,
+      totalBookings: parsed.totalBookings,
+      earnings: parsed.earnings,
+      ratingAvg: parsed.ratingAvg,
+      ratingCount: parsed.ratingCount,
+      updatedAt: parsed.updatedAt,
+    };
+    merchantStatsCacheTime = parsed.cachedAt || Date.now();
+  } catch {
+    return;
+  }
+}
+
+function saveMerchantStatsToStorage(stats: MerchantDashboardStats) {
+  if (typeof window === "undefined" || typeof window.localStorage === "undefined") return;
+  try {
+    const payload = { ...stats, cachedAt: Date.now() };
+    window.localStorage.setItem(MERCHANT_STATS_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    return;
+  }
+}
 
 export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
   const now = Date.now();
+  if (!adminStatsCache) {
+    loadAdminStatsFromStorage();
+  }
   if (adminStatsCache && now - adminStatsCacheTime < DASHBOARD_STATS_TTL_MS) {
     return adminStatsCache;
   }
@@ -904,6 +1041,7 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
     const result = await task;
     adminStatsCache = result;
     adminStatsCacheTime = Date.now();
+    saveAdminStatsToStorage(result);
     adminStatsPromise = null;
     return result;
   } catch (e) {
@@ -922,6 +1060,9 @@ export type MerchantDashboardStats = {
 };
 export async function getMerchantDashboardStats(): Promise<MerchantDashboardStats> {
   const now = Date.now();
+  if (!merchantStatsCache) {
+    loadMerchantStatsFromStorage();
+  }
   if (merchantStatsCache && now - merchantStatsCacheTime < DASHBOARD_STATS_TTL_MS) {
     return merchantStatsCache;
   }
@@ -952,6 +1093,7 @@ export async function getMerchantDashboardStats(): Promise<MerchantDashboardStat
     const result = await task;
     merchantStatsCache = result;
     merchantStatsCacheTime = Date.now();
+    saveMerchantStatsToStorage(result);
     merchantStatsPromise = null;
     return result;
   } catch (e) {

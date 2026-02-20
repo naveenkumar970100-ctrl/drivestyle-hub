@@ -36,6 +36,8 @@ const bookingSchema = new mongoose.Schema(
     photosBefore: [{ type: String }],
     photosAfter: [{ type: String }],
     photosReturn: [{ type: String }],
+    beforeServicePhotos: [{ type: String }],
+    afterServicePhotos: [{ type: String }],
     estimateLabour: { type: Number },
     estimateParts: { type: Number },
     estimateAdditional: { type: Number },

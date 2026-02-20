@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { Users, UserCheck, UserX, ShoppingBag, TrendingUp, IndianRupee, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { listApprovals, setApprovalStatus, listRegistrations, deleteRegistration, listApprovalEvents, listBookings, listServices, addService, updateService, deleteService, setServicePrice, setBookingStatus, assignBookingSlot, listStaff, addStaff, deleteStaff, assignJob, listJobs, setJobStatus, listPayments, addPayment, setPaymentStatus, listInvoices, generateInvoice, markInvoicePaid, downloadInvoice, addNotificationForUser, createAdminUser, addRegistration, listUsersFromApi, deleteUserByAdmin, deleteApiBooking, updateUserLocationByAdmin, type ApiUser, type Approval, type Registration, type ApprovalEvent, type Booking, type ServiceItem, type VehicleType, type BookingStatus, type StaffMember, type StaffRoleType, type Job, type JobStatus, type Payment, type Invoice } from "@/lib/utils";
+import { listApprovals, setApprovalStatus, listRegistrations, deleteRegistration, listApprovalEvents, listBookings, listServices, addService, updateService, deleteService, setServicePrice, setBookingStatus, assignBookingSlot, listStaff, addStaff, deleteStaff, assignJob, listJobs, setJobStatus, listPayments, addPayment, setPaymentStatus, listInvoices, generateInvoice, markInvoicePaid, downloadInvoice, addNotificationForUser, createAdminUser, addRegistration, listUsersFromApi, deleteUserByAdmin, deleteApiBooking, updateUserLocationByAdmin, getCachedApiBookings, type ApiUser, type Approval, type Registration, type ApprovalEvent, type Booking, type ServiceItem, type VehicleType, type BookingStatus, type StaffMember, type StaffRoleType, type Job, type JobStatus, type Payment, type Invoice } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -45,10 +45,10 @@ const AdminDashboard = () => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [apiBookings, setApiBookings] = useState<ApiBooking[]>([]);
   const [loadingApiBookings, setLoadingApiBookings] = useState(false);
+  const [apiBookingsLoadedOnce, setApiBookingsLoadedOnce] = useState(false);
+  const [apiBookingsError, setApiBookingsError] = useState<string | null>(null);
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [newInvoice, setNewInvoice] = useState<{ bookingId: string; email: string; amount: number }>({ bookingId: "", email: "", amount: 0 });
   const [savingInvoice, setSavingInvoice] = useState(false);
   const [vehicleType, setVehicleType] = useState<VehicleType>("car");
@@ -137,18 +137,11 @@ const AdminDashboard = () => {
       });
     }
   };
-  useEffect(() => {
-    refresh();
-    setRegistrations(listRegistrations());
-    setApprovalEvents(listApprovalEvents());
-    setBookings(listBookings());
-    setStaff(listStaff());
-    setJobs(listJobs());
-    setPayments(listPayments());
-    setInvoices(listInvoices());
-    (async () => {
-      setLoadingApiBookings(true);
-      const tasks: Promise<void>[] = [];
+  async function loadRecentApiBookings(options: { includeUsers: boolean }) {
+    setLoadingApiBookings(true);
+    setApiBookingsError(null);
+    const tasks: Promise<void>[] = [];
+    if (options.includeUsers) {
       tasks.push(
         (async () => {
           try {
@@ -159,18 +152,52 @@ const AdminDashboard = () => {
           }
         })(),
       );
-      tasks.push(
-        (async () => {
-            try {
-              const b = await listApiBookings({ limit: 100 });
-              setApiBookings(b);
-            } catch {
-              /* ignore bookings fetch error */
-            }
-        })(),
-      );
+    }
+    tasks.push(
+      (async () => {
+        try {
+          const list = await listApiBookings({ limit: 100 });
+          setApiBookings(list);
+        } catch (e) {
+          setApiBookings([]);
+          const msg = e instanceof Error ? e.message : "Failed to fetch bookings";
+          setApiBookingsError(msg);
+        }
+      })(),
+    );
+    try {
       await Promise.all(tasks);
+    } finally {
       setLoadingApiBookings(false);
+      setApiBookingsLoadedOnce(true);
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+    setRegistrations(listRegistrations());
+    setApprovalEvents(listApprovalEvents());
+    setBookings(listBookings());
+    setStaff(listStaff());
+    setJobs(listJobs());
+    const cached = getCachedApiBookings({ limit: 100 });
+    if (cached.length > 0) {
+      setApiBookings(cached);
+      setApiBookingsLoadedOnce(true);
+    }
+    void loadRecentApiBookings({ includeUsers: true });
+    (async () => {
+      try {
+        const s = await getAdminDashboardStats();
+        setAdminStats({
+          totalUsers: s.totalUsers,
+          activeBookings: s.activeBookings,
+          revenue: s.revenue,
+          onlineStaffCount: s.onlineStaffCount,
+        });
+      } catch {
+        void 0;
+      }
     })();
   }, []);
   useEffect(() => {
@@ -178,32 +205,7 @@ const AdminDashboard = () => {
   }, [vehicleType]);
   useEffect(() => {
     if (tab === "recent-bookings" || tab === "dashboard") {
-      (async () => {
-        setLoadingApiBookings(true);
-        const tasks: Promise<void>[] = [];
-        tasks.push(
-          (async () => {
-            try {
-              const u = await listUsersFromApi();
-              setUsers(u);
-            } catch {
-              /* ignore user fetch error */
-            }
-          })(),
-        );
-        tasks.push(
-          (async () => {
-            try {
-              const b = await listApiBookings({ limit: 100 });
-              setApiBookings(b);
-            } catch {
-              /* ignore bookings fetch error */
-            }
-          })(),
-        );
-        await Promise.all(tasks);
-        setLoadingApiBookings(false);
-      })();
+      void loadRecentApiBookings({ includeUsers: true });
     }
   }, [tab]);
   useEffect(() => {
@@ -232,15 +234,7 @@ const AdminDashboard = () => {
           }
           tasks.push(
             (async () => {
-              try {
-                setLoadingApiBookings(true);
-                const b = await listApiBookings({ limit: 100 });
-                setApiBookings(b);
-              } catch {
-                /* ignore */
-              } finally {
-                setLoadingApiBookings(false);
-              }
+              await loadRecentApiBookings({ includeUsers: false });
             })(),
           );
           await Promise.all(tasks);
@@ -251,6 +245,14 @@ const AdminDashboard = () => {
       if (timer) window.clearInterval(timer);
     };
   }, [tab]);
+  useEffect(() => {
+    if (!loadingApiBookings) return;
+    const timeout = window.setTimeout(() => {
+      setLoadingApiBookings(false);
+      setApiBookingsLoadedOnce(true);
+    }, 10000);
+    return () => window.clearTimeout(timeout);
+  }, [loadingApiBookings]);
 
   const serviceHistory = useMemo(() => {
     const filtered = bookings.filter((b) => (vehicleType === "bike" ? b.vehicle === "bike" : b.vehicle === "car"));
@@ -324,6 +326,47 @@ const AdminDashboard = () => {
       { label: "Paid 7 Days", value: `₹${paid7Days.toLocaleString("en-IN")}`, icon: IndianRupee, change: "" },
     ] as Array<{ label: string; value: string; icon: typeof Users; change: string }>;
   }, [users, apiBookings, adminStats]);
+
+  const adminInvoices = useMemo(() => {
+    const items: Invoice[] = [];
+    for (const b of apiBookings) {
+      const email = b.customerEmail || "";
+      if (!email) continue;
+      const hasBill = typeof b.billTotal === "number" && b.billTotal > 0;
+      const pays = Array.isArray(b.payments) ? b.payments : [];
+      const hasPays = pays.length > 0;
+      if (!hasBill && !hasPays) continue;
+      const paid = pays.reduce((s, x) => s + (Number(x.amount || 0) || 0), 0);
+      const amount = hasBill ? b.billTotal! : paid;
+      const baseDate = b.date ? new Date(b.date) : new Date();
+      const invoiceNo = `INV-${baseDate.getFullYear()}-${String(b.id).slice(-5).toUpperCase()}`;
+      const status: "Generated" | "Paid" =
+        hasBill && paid >= b.billTotal!
+          ? "Paid"
+          : paid > 0
+            ? "Paid"
+            : "Generated";
+      items.push({
+        id: `${b.id}-admininv`,
+        bookingId: b.id,
+        customerEmail: email,
+        amount,
+        invoiceNo,
+        status,
+        createdAt: b.date || new Date().toISOString(),
+      });
+    }
+    return items;
+  }, [apiBookings]);
+  const recentReviews = useMemo(() => {
+    const reviewed = apiBookings.filter((b) => typeof b.ratingValue === "number");
+    reviewed.sort((a, b) => {
+      const ta = b.dropAt ? new Date(b.dropAt).getTime() : 0;
+      const tb = a.dropAt ? new Date(a.dropAt).getTime() : 0;
+      return ta - tb;
+    });
+    return reviewed.slice(0, 5);
+  }, [apiBookings]);
   return (
     <DashboardLayout role="admin">
       <div className="space-y-6">
@@ -363,20 +406,47 @@ const AdminDashboard = () => {
         )}
 
         {tab === "dashboard" && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {summaryStats.map((s, i) => (
-            <motion.div key={s.label} {...fadeUp} transition={{ delay: i * 0.1 }}
-              className="rounded-xl border bg-card p-5 shadow-card"
-            >
-              <div className="flex items-center justify-between">
-                <s.icon className="h-8 w-8 text-accent" />
-                <span className="text-xs text-accent font-medium">{s.change}</span>
-              </div>
-              <div className="mt-3 font-heading text-2xl font-bold">{s.value}</div>
-              <div className="text-sm text-muted-foreground">{s.label}</div>
-            </motion.div>
-          ))}
-        </div>
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {summaryStats.map((s, i) => (
+              <motion.div key={s.label} {...fadeUp} transition={{ delay: i * 0.1 }}
+                className="rounded-xl border bg-card p-5 shadow-card"
+              >
+                <div className="flex items-center justify-between">
+                  <s.icon className="h-8 w-8 text-accent" />
+                  <span className="text-xs text-accent font-medium">{s.change}</span>
+                </div>
+                <div className="mt-3 font-heading text-2xl font-bold">{s.value}</div>
+                <div className="text-sm text-muted-foreground">{s.label}</div>
+              </motion.div>
+            ))}
+          </div>
+          <motion.div {...fadeUp} transition={{ delay: 0.25 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <h2 className="font-heading text-xl font-bold">Recent Reviews</h2>
+            <div className="mt-4 space-y-3">
+              {recentReviews.length === 0 && (
+                <div className="rounded-lg border p-4 text-sm text-muted-foreground">No reviews yet</div>
+              )}
+              {recentReviews.map((b) => (
+                <div key={b.id} className="flex flex-col gap-2 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="font-medium">{b.service}</div>
+                    <div className="text-xs text-muted-foreground">{b.customerEmail}</div>
+                    <div className="text-xs text-muted-foreground">
+                      Rating: {b.ratingValue}/5 {b.ratingComment ? `• "${b.ratingComment}"` : ""}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {b.dropAt && (
+                      <span className="text-xs text-muted-foreground">{new Date(b.dropAt).toLocaleString()}</span>
+                    )}
+                    <Badge variant="outline">{b.status}</Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        </>
         )}
 
         {(tab === "dashboard" || tab === "create-accounts") && (
@@ -648,14 +718,31 @@ const AdminDashboard = () => {
         <motion.div {...fadeUp} transition={{ delay: 0.55 }} className="rounded-xl border bg-card p-6 shadow-card">
           <h2 className="font-heading text-xl font-bold">Recent Bookings</h2>
           <div className="mt-4 space-y-3">
-            {loadingApiBookings && (
+            {!apiBookingsLoadedOnce && loadingApiBookings && (
               <div className="rounded-lg border p-4 text-sm text-muted-foreground">Loading recent bookings…</div>
             )}
-            {!loadingApiBookings && apiBookings.length === 0 && (
+            {apiBookingsLoadedOnce && apiBookingsError && (
+              <div className="rounded-lg border p-4 text-sm text-red-500">
+                Failed to load recent bookings: {apiBookingsError}
+              </div>
+            )}
+            {apiBookingsLoadedOnce && !loadingApiBookings && !apiBookingsError && apiBookings.length === 0 && (
               <div className="rounded-lg border p-4 text-sm text-muted-foreground">No bookings yet</div>
+            )}
+            {loadingApiBookings && apiBookingsLoadedOnce && apiBookings.length > 0 && (
+              <div className="text-xs text-muted-foreground">Refreshing bookings…</div>
             )}
             {[...apiBookings]
               .sort((a, b) => {
+                const rank = (s: unknown) => {
+                  const u = String(s || "").toUpperCase();
+                  if (u === "PENDING_ASSIGNMENT") return 0;
+                  if (u === "ASSIGNED") return 1;
+                  return 2;
+                };
+                const ra = rank(a.status);
+                const rb = rank(b.status);
+                if (ra !== rb) return ra - rb;
                 const ta = a.lastUpdatedAt ? Date.parse(a.lastUpdatedAt) : 0;
                 const tb = b.lastUpdatedAt ? Date.parse(b.lastUpdatedAt) : 0;
                 if (ta !== tb) return tb - ta;
@@ -663,7 +750,7 @@ const AdminDashboard = () => {
                 const db = b.date ? Date.parse(b.date) : 0;
                 return db - da;
               })
-              .slice(0, 20)
+              .slice(0, 50)
               .map((b) => (
               <div key={b.id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -677,7 +764,7 @@ const AdminDashboard = () => {
                   )}
                   {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
                     <div className="mt-2">
-                      <div className="text-xs text-muted-foreground mb-1">Before Service</div>
+                      <div className="text-xs text-muted-foreground mb-1">Before Pickup</div>
                       <div className="flex flex-wrap gap-2">
                         {b.photosBefore.slice(0, 4).map((src, i) => (
                           <Dialog key={`before-${i}`}>
@@ -692,11 +779,11 @@ const AdminDashboard = () => {
                       </div>
                     </div>
                   )}
-                  {Array.isArray(b.photosAfter) && b.photosAfter.length > 0 && (
+                  {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
                     <div className="mt-2">
-                      <div className="text-xs text-muted-foreground mb-1">After Service</div>
+                      <div className="text-xs text-muted-foreground mb-1">Before Service</div>
                       <div className="flex flex-wrap gap-2">
-                        {b.photosAfter.slice(0, 4).map((src, i) => (
+                        {b.beforeServicePhotos.slice(0, 4).map((src, i) => (
                           <Dialog key={`after-${i}`}>
                             <DialogTrigger asChild>
                               <img src={src} alt="After" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
@@ -709,11 +796,11 @@ const AdminDashboard = () => {
                       </div>
                     </div>
                   )}
-                  {Array.isArray(b.photosReturn) && b.photosReturn.length > 0 && (
+                  {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
                     <div className="mt-2">
-                      <div className="text-xs text-muted-foreground mb-1">Return</div>
+                      <div className="text-xs text-muted-foreground mb-1">After Service</div>
                       <div className="flex flex-wrap gap-2">
-                        {b.photosReturn.slice(0, 4).map((src, i) => (
+                        {b.afterServicePhotos.slice(0, 4).map((src, i) => (
                           <Dialog key={`ret-${i}`}>
                             <DialogTrigger asChild>
                               <img src={src} alt="Return" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
@@ -729,6 +816,11 @@ const AdminDashboard = () => {
                   {typeof b.estimateTotal === "number" && (
                     <div className="text-xs text-muted-foreground">
                       Estimate: ₹{(b.estimateLabour || 0)} + ₹{(b.estimateParts || 0)} + ₹{(b.estimateAdditional || 0)} = ₹{b.estimateTotal}
+                    </div>
+                  )}
+                  {typeof b.ratingValue === "number" && (
+                    <div className="text-xs text-muted-foreground">
+                      Rating: {b.ratingValue}/5 {b.ratingComment ? `• "${b.ratingComment}"` : ""}
                     </div>
                   )}
                   {b.lastUpdatedMessage && (
@@ -769,7 +861,8 @@ const AdminDashboard = () => {
                   {(() => {
                     const hasMedia =
                       (Array.isArray(b.photosBefore) && b.photosBefore.length > 0) ||
-                      (Array.isArray(b.photosAfter) && b.photosAfter.length > 0) ||
+                      (Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0) ||
+                      (Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0) ||
                       (Array.isArray(b.photosReturn) && b.photosReturn.length > 0);
                     if (!hasMedia) return null;
                     return (
@@ -784,20 +877,30 @@ const AdminDashboard = () => {
                           <div className="space-y-4">
                             {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
                               <div>
-                                <div className="text-xs text-muted-foreground mb-2">Before Service</div>
+                                <div className="text-xs text-muted-foreground mb-2">Before Pickup</div>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                                   {b.photosBefore.map((src, i) => (
-                                    <img key={`adg-b-${i}`} src={src} alt="Before" className="w-full h-28 object-cover rounded border" />
+                                    <img key={`adg-bp-${i}`} src={src} alt="Before pickup" className="w-full h-28 object-cover rounded border" />
                                   ))}
                                 </div>
                               </div>
                             )}
-                            {Array.isArray(b.photosAfter) && b.photosAfter.length > 0 && (
+                            {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
+                              <div>
+                                <div className="text-xs text-muted-foreground mb-2">Before Service</div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                  {b.beforeServicePhotos.map((src, i) => (
+                                    <img key={`adg-bs-${i}`} src={src} alt="Before service" className="w-full h-28 object-cover rounded border" />
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
                               <div>
                                 <div className="text-xs text-muted-foreground mb-2">After Service</div>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                  {b.photosAfter.map((src, i) => (
-                                    <img key={`adg-a-${i}`} src={src} alt="After" className="w-full h-28 object-cover rounded border" />
+                                  {b.afterServicePhotos.map((src, i) => (
+                                    <img key={`adg-as-${i}`} src={src} alt="After service" className="w-full h-28 object-cover rounded border" />
                                   ))}
                                 </div>
                               </div>
@@ -1081,11 +1184,23 @@ const AdminDashboard = () => {
                       <Button
                         size="sm"
                         className="gradient-accent border-0 text-accent-foreground"
-                        onClick={() => {
+                        onClick={async () => {
                           const amount = Number(String(b.price || "0").replace(/[^0-9.]/g, ""));
-                          const inv = generateInvoice({ bookingId: b.id, customerEmail: b.customerEmail, amount });
-                          setInvoices(listInvoices());
-                          toast({ title: "Invoice generated", description: `${inv.invoiceNo} • ${inv.customerEmail} • ₹${inv.amount}` });
+                          if (!amount || !b.id) return;
+                          try {
+                            await patchBookingApi(b.id, {
+                              action: "add_payment",
+                              amount,
+                              method: "admin",
+                              reference: "manual-invoice",
+                            });
+                            const next = await listApiBookings({ limit: 100 });
+                            setApiBookings(next);
+                            toast({ title: "Invoice recorded", description: `${b.customerEmail} • ₹${amount}` });
+                          } catch (err) {
+                            const message = err instanceof Error ? err.message : String(err);
+                            toast({ title: "Failed", description: message, variant: "destructive" });
+                          }
                         }}
                       >
                         Generate Invoice
@@ -1116,14 +1231,45 @@ const AdminDashboard = () => {
                       <Button
                         size="sm"
                         className="gradient-accent border-0 text-accent-foreground"
-                        onClick={() => {
+                        onClick={async () => {
                           const amount = Number(String(b.price || "0").replace(/[^0-9.]/g, ""));
-                          const inv = generateInvoice({ bookingId: b.id, customerEmail: b.customerEmail, amount });
-                          setInvoices(listInvoices());
-                          toast({ title: "Invoice generated", description: `${inv.invoiceNo} • ${inv.customerEmail} • ₹${inv.amount}` });
+                          if (!amount || !b.id) return;
+                          try {
+                            await patchBookingApi(b.id, {
+                              action: "add_payment",
+                              amount,
+                              method: "admin",
+                              reference: "manual-invoice",
+                            });
+                            const next = await listApiBookings({ limit: 100 });
+                            setApiBookings(next);
+                            toast({ title: "Invoice recorded", description: `${b.customerEmail} • ₹${amount}` });
+                          } catch (err) {
+                            const message = err instanceof Error ? err.message : String(err);
+                            toast({ title: "Failed", description: message, variant: "destructive" });
+                          }
                         }}
                       >
                         Generate Invoice
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={async () => {
+                          const ok = window.confirm(`Delete booking for ${b.customerEmail}? This cannot be undone.`);
+                          if (!ok) return;
+                          try {
+                            await deleteApiBooking(b.id);
+                            const next = await listApiBookings({ limit: 100 });
+                            setApiBookings(next);
+                            toast({ title: "Booking deleted", description: b.customerEmail });
+                          } catch (err) {
+                            const message = err instanceof Error ? err.message : String(err);
+                            toast({ title: "Delete failed", description: message, variant: "destructive" });
+                          }
+                        }}
+                      >
+                        Delete
                       </Button>
                     </div>
                   )}
@@ -1294,13 +1440,20 @@ const AdminDashboard = () => {
                   </div>
                   <Button
                     disabled={savingInvoice || !newInvoice.bookingId || !newInvoice.email || !newInvoice.amount}
-                    onClick={() => {
+                    onClick={async () => {
+                      if (!newInvoice.bookingId || !newInvoice.amount) return;
                       try {
                         setSavingInvoice(true);
-                        generateInvoice({ bookingId: newInvoice.bookingId, customerEmail: newInvoice.email, amount: newInvoice.amount });
-                        setInvoices(listInvoices());
+                        await patchBookingApi(newInvoice.bookingId, {
+                          action: "add_payment",
+                          amount: newInvoice.amount,
+                          method: "admin",
+                          reference: "manual-invoice",
+                        });
+                        const next = await listApiBookings({ limit: 100 });
+                        setApiBookings(next);
                         setNewInvoice({ bookingId: "", email: "", amount: 0 });
-                        toast({ title: "Invoice generated" });
+                        toast({ title: "Invoice recorded" });
                       } catch (err) {
                         const message = err instanceof Error ? err.message : String(err);
                         toast({ title: "Failed", description: message, variant: "destructive" });
@@ -1317,10 +1470,10 @@ const AdminDashboard = () => {
             </Dialog>
           </div>
           <div className="mt-4 space-y-3">
-            {invoices.length === 0 && (
+            {adminInvoices.length === 0 && (
               <div className="rounded-lg border p-4 text-sm text-muted-foreground">No invoices</div>
             )}
-            {invoices.map((inv) => (
+            {adminInvoices.map((inv) => (
               <div key={inv.id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="font-medium">{inv.invoiceNo}</div>
@@ -1328,9 +1481,47 @@ const AdminDashboard = () => {
                 </div>
                 <div className="flex items-center gap-3">
                   <Badge variant={inv.status === "Paid" ? "secondary" : "outline"}>{inv.status}</Badge>
-                  <Button size="sm" variant="outline" onClick={() => downloadInvoice(inv)}>Download</Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const b = apiBookings.find((x) => x.id === inv.bookingId);
+                      downloadInvoice(inv, { service: b?.service, date: b?.date });
+                    }}
+                  >
+                    Download
+                  </Button>
                   {inv.status !== "Paid" && (
-                    <Button size="sm" variant="outline" onClick={() => { markInvoicePaid(inv.id); setInvoices(listInvoices()); }}>Mark Paid</Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        const b = apiBookings.find((x) => x.id === inv.bookingId);
+                        if (!b) return;
+                        const bill = typeof b.billTotal === "number" && b.billTotal > 0 ? b.billTotal : inv.amount;
+                        const paid = Array.isArray(b.payments)
+                          ? b.payments.reduce((s, x) => s + (Number(x.amount || 0) || 0), 0)
+                          : 0;
+                        const remaining = bill - paid;
+                        if (remaining <= 0) return;
+                        try {
+                          await patchBookingApi(b.id, {
+                            action: "add_payment",
+                            amount: remaining,
+                            method: "admin",
+                            reference: "mark-paid",
+                          });
+                          const next = await listApiBookings({ limit: 100 });
+                          setApiBookings(next);
+                          toast({ title: "Marked as paid", description: inv.invoiceNo });
+                        } catch (err) {
+                          const message = err instanceof Error ? err.message : String(err);
+                          toast({ title: "Failed", description: message, variant: "destructive" });
+                        }
+                      }}
+                    >
+                      Mark Paid
+                    </Button>
                   )}
                 </div>
               </div>
