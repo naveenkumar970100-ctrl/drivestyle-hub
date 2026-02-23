@@ -166,6 +166,9 @@ const StaffDashboard = () => {
       toast({ title: "Failed to log", description: message, variant: "destructive" });
     }
   }
+  function updateBookingLocal(id: string, patch: Partial<ApiBooking>) {
+    setBookings((prev) => prev.map((bk) => (bk.id === id ? { ...bk, ...patch } : bk)));
+  }
   async function uploadBefore(b: ApiBooking, picked?: File) {
     const file = picked || beforeFile;
     if (!file) { toast({ title: "Upload required", description: "Choose an image file", variant: "destructive" }); return; }
@@ -414,8 +417,7 @@ const StaffDashboard = () => {
                           setSaving(true);
                           try {
                             await patchBookingApi(t.id, { action: "staff_accept" });
-                            const list = await listApiBookings({ limit: 100 });
-                            setBookings(list);
+                            updateBookingLocal(t.id, { staffAcceptanceStatus: "accepted" });
                             toast({ title: "Accepted", description: t.customerEmail });
                           } catch (e) {
                             const msg = e instanceof Error ? e.message : String(e);
@@ -435,8 +437,7 @@ const StaffDashboard = () => {
                           setSaving(true);
                           try {
                             await patchBookingApi(t.id, { action: "staff_decline" });
-                            const list = await listApiBookings({ limit: 100 });
-                            setBookings(list);
+                            updateBookingLocal(t.id, { staffAcceptanceStatus: "declined", staffId: undefined });
                             toast({ title: "Declined", description: t.customerEmail });
                           } catch (e) {
                             const msg = e instanceof Error ? e.message : String(e);
@@ -650,33 +651,22 @@ const StaffDashboard = () => {
                         </>
                       ) : (
                         <>
-                      <span className="text-xs text-muted-foreground">Update status</span>
-                      <Select
-                        value={String(t.status || "")}
-                        onValueChange={async (v) => {
-                          const ok = window.confirm(`Are you sure you want to update status to ${v}?`);
-                          if (!ok) return;
-                          await patchBookingApi(t.id, { action: "update_status", status: v });
-                          const list = await listApiBookings({ limit: 100 });
-                          setBookings(list);
-                        }}
-                      >
-                        <SelectTrigger className="w-44"><SelectValue placeholder="Select status" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pickup_done">Pickup Confirmed</SelectItem>
-                          <SelectItem value="in_transit">In Transit</SelectItem>
-                          <SelectItem value="at_service_center">At Service Center</SelectItem>
-                          <SelectItem value="in_progress">In Progress</SelectItem>
-                          <SelectItem value="ready_for_delivery">Ready For Delivery</SelectItem>
-                          <SelectItem value="delivered">Delivered</SelectItem>
-                          <SelectItem value="completed">Completed</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Badge variant="outline">{t.status}</Badge>
-                      {t.staffAcceptanceStatus === "accepted" && (
-                        <Button variant="outline" size="sm" onClick={() => { window.open(`tel:${t.customerPhone || ""}`); void logCall(t); }}><Phone className="mr-2 h-4 w-4" /> Call</Button>
-                      )}
-                      <Button variant="outline" size="sm" onClick={() => setOpenId(t.id)}><MapPin className="mr-2 h-4 w-4" /> Details</Button>
+                          <Badge variant="outline">{t.status}</Badge>
+                          {t.staffAcceptanceStatus === "accepted" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                window.open(`tel:${t.customerPhone || ""}`);
+                                void logCall(t);
+                              }}
+                            >
+                              <Phone className="mr-2 h-4 w-4" /> Call
+                            </Button>
+                          )}
+                          <Button variant="outline" size="sm" onClick={() => setOpenId(t.id)}>
+                            <MapPin className="mr-2 h-4 w-4" /> Details
+                          </Button>
                         </>
                       )}
                     </div>

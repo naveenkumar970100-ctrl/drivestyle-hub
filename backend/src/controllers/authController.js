@@ -1,6 +1,9 @@
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const { User, ROLES } = require('../models/User');
 const { config } = require('../config/env');
+
+const isDbConnected = () => (mongoose.connection?.readyState || 0) === 1;
 
 const generateToken = (user) => {
   return jwt.sign({ id: user._id, role: user.role }, config.JWT_SECRET, {
@@ -30,6 +33,7 @@ const register = async (req, res, next) => {
 const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
+    const connected = isDbConnected();
     if ((config.NODE_ENV || 'development') !== 'production') {
       const defaults = [
         { email: process.env.VITE_ADMIN_EMAIL || 'admin@gmail.com', password: process.env.VITE_ADMIN_PASSWORD || 'Admin@123', role: 'admin', name: 'Admin' },
@@ -39,19 +43,41 @@ const login = async (req, res, next) => {
       ];
       const matchDefault = defaults.find((d) => d.email === email && d.password === password);
       if (matchDefault) {
-        let u = await User.findOne({ email: matchDefault.email });
-        if (!u) {
-          u = await User.create({ name: matchDefault.name, email: matchDefault.email, password: matchDefault.password, role: matchDefault.role });
+        if (connected) {
+          let u = await User.findOne({ email: matchDefault.email });
+          if (!u) {
+            u = await User.create({
+              name: matchDefault.name,
+              email: matchDefault.email,
+              password: matchDefault.password,
+              role: matchDefault.role,
+            });
+          }
+          const token = generateToken(u);
+          u.tokens = Array.isArray(u.tokens) ? u.tokens : [];
+          u.tokens.push({ token });
+          await u.save();
+          return res.json({
+            user: { id: u._id, name: u.name, email: u.email, role: u.role },
+            token,
+          });
         }
-        const token = generateToken(u);
-        u.tokens = Array.isArray(u.tokens) ? u.tokens : [];
-        u.tokens.push({ token });
-        await u.save();
+        const fakeId = new mongoose.Types.ObjectId().toString();
+        const user = {
+          _id: fakeId,
+          name: matchDefault.name,
+          email: matchDefault.email,
+          role: matchDefault.role,
+        };
+        const token = generateToken(user);
         return res.json({
-          user: { id: u._id, name: u.name, email: u.email, role: u.role },
+          user: { id: user._id, name: user.name, email: user.email, role: user.role },
           token,
         });
       }
+    }
+    if (!connected) {
+      return res.status(503).json({ message: 'Database not connected' });
     }
     const user = await User.findOne({ email });
     if (!user) return res.status(401).json({ message: 'Invalid credentials' });

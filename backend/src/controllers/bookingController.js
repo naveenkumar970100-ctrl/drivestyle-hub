@@ -1,12 +1,38 @@
 const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
 const { Booking } = require('../models/Booking');
 const { User } = require('../models/User');
 
 const isDbConnected = () => (mongoose.connection?.readyState || 0) === 1;
 
+const dataDir = path.join(__dirname, '..', 'data');
+const bookingsFile = path.join(dataDir, 'bookings.json');
+
+function readOfflineBookings() {
+  try {
+    const raw = fs.readFileSync(bookingsFile, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function writeOfflineBookings(list) {
+  try {
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    fs.writeFileSync(bookingsFile, JSON.stringify(list, null, 2), 'utf8');
+  } catch {
+  }
+}
+
 const createBooking = async (req, res, next) => {
   try {
-    if (!isDbConnected()) return res.status(503).json({ message: 'Database not connected' });
+    const connected = isDbConnected();
     const { customerEmail, customerPhone, vehicle, service, location, date, time, registration, reg } = req.body;
     const plate = (registration || reg || '').toString().trim();
     if (!customerEmail || !vehicle || !service) return res.status(400).json({ message: 'Required: customerEmail, vehicle, service' });
@@ -22,8 +48,20 @@ const createBooking = async (req, res, next) => {
       registration: plate,
       status: 'PENDING_ASSIGNMENT',
     };
-    const doc = await Booking.create(payload);
-    res.status(201).json({ booking: { id: doc._id } });
+    if (connected) {
+      const doc = await Booking.create(payload);
+      const offline = readOfflineBookings();
+      offline.push({ ...payload, _id: doc._id, createdAt: doc.createdAt, updatedAt: doc.updatedAt });
+      writeOfflineBookings(offline);
+      res.status(201).json({ booking: { id: doc._id } });
+    } else {
+      const offline = readOfflineBookings();
+      const id = new mongoose.Types.ObjectId().toString();
+      const now = new Date();
+      offline.push({ ...payload, _id: id, createdAt: now, updatedAt: now });
+      writeOfflineBookings(offline);
+      res.status(201).json({ booking: { id } });
+    }
   } catch (err) {
     next(err);
   }
@@ -31,7 +69,7 @@ const createBooking = async (req, res, next) => {
 
 const listBookings = async (req, res, next) => {
   try {
-    if (!isDbConnected()) return res.status(503).json({ message: 'Database not connected' });
+    const connected = isDbConnected();
     const inProd = (process.env.NODE_ENV || 'development') === 'production';
     const roleStr = req.user
       ? String(req.user.role || 'customer').toLowerCase()
@@ -65,73 +103,48 @@ const listBookings = async (req, res, next) => {
     } else {
       filter = {};
     }
-    console.log('listBookings: role=%s email=%s', roleStr, email || '(none)');
-    console.log('listBookings: initial filter=%j', filter);
     let limit;
-    let query = Booking.find(filter).sort({ createdAt: -1 });
-    const limitRaw = req.query.limit;
-    if (typeof limitRaw === 'string' && limitRaw.trim() !== '') {
-      const parsed = parseInt(limitRaw, 10);
-      if (!Number.isNaN(parsed) && parsed > 0) {
-        limit = Math.min(parsed, 200);
-        query = query.limit(limit);
-      }
-    }
-    let docs = await query.lean();
-    console.log('listBookings: mongoose docs length=%d', Array.isArray(docs) ? docs.length : -1);
-    if (docs.length === 0) {
-      try {
-        const db = mongoose.connection && mongoose.connection.db;
-        const coll = db && db.collection ? db.collection('Booking') : null;
-        if (coll) {
-          let cursor = coll.find(filter).sort({ createdAt: -1 });
-          if (typeof limit === 'number') {
-            cursor = cursor.limit(limit);
-          }
-          const raw = await cursor.toArray();
-          console.log('listBookings: raw fallback docs length=%d', Array.isArray(raw) ? raw.length : -1);
-          if (Array.isArray(raw) && raw.length > 0) docs = raw;
+    let docs = [];
+    if (connected) {
+      let query = Booking.find(filter).sort({ createdAt: -1 });
+      const limitRaw = req.query.limit;
+      if (typeof limitRaw === 'string' && limitRaw.trim() !== '') {
+        const parsed = parseInt(limitRaw, 10);
+        if (!Number.isNaN(parsed) && parsed > 0) {
+          limit = Math.min(parsed, 200);
+          query = query.limit(limit);
         }
-      } catch {
-        // ignore fallback errors
       }
-    }
-    if (!inProd && docs.length === 0) {
-      try {
-        const client = mongoose.connection && mongoose.connection.client;
-        if (client && typeof client.db === 'function') {
-          const admin = client.db().admin();
-          const info = await admin.listDatabases();
-          for (const dbMeta of info.databases || []) {
-            const name = dbMeta.name;
-            if (['admin', 'local', 'config'].includes(name)) continue;
-            const adb = client.db(name);
-            const collections = await adb.listCollections().toArray();
-            const bookingCollections = collections.filter((c) => /booking/i.test(c.name || ''));
-            for (const c of bookingCollections) {
-              let cursor = adb.collection(c.name).find(filter).sort({ createdAt: -1 });
-              if (typeof limit === 'number') {
-                cursor = cursor.limit(limit);
-              }
-              const raw = await cursor.toArray();
-              console.log('listBookings: db=%s coll=%s docs=%d', name, c.name, Array.isArray(raw) ? raw.length : -1);
-              if (Array.isArray(raw) && raw.length > 0) {
-                docs = raw;
-                break;
-              }
-            }
-            if (Array.isArray(docs) && docs.length > 0) break;
-          }
+      docs = await query.lean();
+      if (!inProd && roleStr === 'customer' && email && docs.length === 0) {
+        docs = await Booking.find({}).sort({ createdAt: -1 }).lean();
+      }
+    } else {
+      const all = readOfflineBookings();
+      let filtered = all;
+      if (roleStr === 'customer' && email) {
+        filtered = all.filter((b) => String(b.customerEmail || '').toLowerCase() === email);
+      } else if (roleStr === 'merchant' && filter.merchantId) {
+        const mid = String(filter.merchantId);
+        filtered = all.filter((b) => String(b.merchantId || '') === mid);
+      } else if (roleStr === 'staff' && filter.staffId) {
+        const sid = String(filter.staffId);
+        filtered = all.filter((b) => String(b.staffId || '') === sid);
+      }
+      filtered.sort((a, b) => {
+        const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tb - ta;
+      });
+      const limitRaw = req.query.limit;
+      if (typeof limitRaw === 'string' && limitRaw.trim() !== '') {
+        const parsed = parseInt(limitRaw, 10);
+        if (!Number.isNaN(parsed) && parsed > 0) {
+          limit = Math.min(parsed, 200);
         }
-      } catch (e) {
-        console.error('listBookings: cross-db scan error', e.message);
       }
+      docs = typeof limit === 'number' ? filtered.slice(0, limit) : filtered;
     }
-    if (!inProd && roleStr === 'customer' && email && docs.length === 0) {
-      console.log('listBookings: dev fallback to all bookings for customer');
-      docs = await Booking.find({}).sort({ createdAt: -1 }).lean();
-    }
-    console.log('listBookings: final docs length=%d', Array.isArray(docs) ? docs.length : -1);
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
