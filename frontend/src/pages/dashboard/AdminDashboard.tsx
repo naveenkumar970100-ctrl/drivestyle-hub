@@ -13,7 +13,7 @@ import { useLocation } from "react-router-dom";
 import { MapContainer, TileLayer, Marker, useMapEvents, type MapContainerProps } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { listApiBookings, patchBookingApi, type ApiBooking, getAdminDashboardStats } from "@/lib/utils";
+import { listApiBookings, patchBookingApi, type ApiBooking, getAdminDashboardStats, listServicesApi, createServiceApi, updateServiceApi, deleteServiceApi } from "@/lib/utils";
 
  
 
@@ -61,6 +61,7 @@ const AdminDashboard = () => {
   const refresh = () => setPending(listApprovals("pending"));
   const [merchantPos, setMerchantPos] = useState<[number, number] | null>(null);
   const [staffPos, setStaffPos] = useState<[number, number] | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
   const [savingMerchant, setSavingMerchant] = useState(false);
   const [savingStaff, setSavingStaff] = useState(false);
   const [users, setUsers] = useState<ApiUser[]>([]);
@@ -114,28 +115,147 @@ const AdminDashboard = () => {
       click(e) {
         const { lat, lng } = e.latlng;
         setStaffPos([lat, lng]);
-        setNewStaffAccount({ ...newStaffAccount, location: `${lat.toFixed(8)},${lng.toFixed(8)}` });
+        setNewStaffAccount((prev) => ({
+          ...prev,
+          location: `${lat.toFixed(8)},${lng.toFixed(8)}`,
+        }));
       },
     });
     return staffPos ? <Marker position={staffPos} /> : null;
   };
   const useMyLocation = () => {
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition((pos) => {
+    if (!("geolocation" in navigator)) {
+      toast({
+        title: "Location not available",
+        description: "Your browser does not support location access.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsLocating(true);
+
+    const fallbackToIP = async () => {
+      try {
+        const res = await fetch("http://ip-api.com/json");
+        const data = await res.json();
+        if (data.status === "success") {
+          setMerchantPos([data.lat, data.lon]);
+          setNewMerchant((prev) => ({
+            ...prev,
+            location: `${data.lat.toFixed(6)}, ${data.lon.toFixed(6)}`,
+          }));
+          toast({ title: "Location found (via IP)", description: `Detected: ${data.city}, ${data.regionName}` });
+        } else {
+          throw new Error("IP lookup failed");
+        }
+      } catch (e) {
+        toast({ title: "Location error", description: "Could not fetch your location via GPS or IP.", variant: "destructive" });
+      } finally {
+        setIsLocating(false);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      if (isLocating) {
+        fallbackToIP();
+      }
+    }, 8000);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        clearTimeout(timer);
+        setIsLocating(false);
         const { latitude, longitude } = pos.coords;
         setMerchantPos([latitude, longitude]);
-        setNewMerchant({ ...newMerchant, location: `${latitude.toFixed(8)},${longitude.toFixed(8)}` });
-      });
-    }
+        setNewMerchant((prev) => ({
+          ...prev,
+          location: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+        }));
+        toast({ title: "Location found", description: "Map updated to your current position." });
+      },
+      (err) => {
+        clearTimeout(timer);
+        const code = typeof err.code === "number" ? err.code : -1;
+        if (code === 3 || code === 2) {
+          fallbackToIP();
+          return;
+        }
+        setIsLocating(false);
+        const message =
+          code === 1
+            ? "Location permission denied. Please allow access in your browser."
+            : "Could not fetch your location.";
+        toast({ title: "Location error", description: message, variant: "destructive" });
+      },
+      { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 },
+    );
   };
   const useMyLocationStaff = () => {
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition((pos) => {
+    if (!("geolocation" in navigator)) {
+      toast({
+        title: "Location not available",
+        description: "Your browser does not support location access.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsLocating(true);
+
+    const fallbackToIP = async () => {
+      try {
+        const res = await fetch("http://ip-api.com/json");
+        const data = await res.json();
+        if (data.status === "success") {
+          setStaffPos([data.lat, data.lon]);
+          setNewStaffAccount((prev) => ({
+            ...prev,
+            location: `${data.lat.toFixed(6)}, ${data.lon.toFixed(6)}`,
+          }));
+          toast({ title: "Location found (via IP)", description: `Detected: ${data.city}, ${data.regionName}` });
+        } else {
+          throw new Error("IP lookup failed");
+        }
+      } catch (e) {
+        toast({ title: "Location error", description: "Could not fetch your location via GPS or IP.", variant: "destructive" });
+      } finally {
+        setIsLocating(false);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      if (isLocating) {
+        fallbackToIP();
+      }
+    }, 8000);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        clearTimeout(timer);
+        setIsLocating(false);
         const { latitude, longitude } = pos.coords;
         setStaffPos([latitude, longitude]);
-        setNewStaffAccount({ ...newStaffAccount, location: `${latitude.toFixed(8)},${longitude.toFixed(8)}` });
-      });
-    }
+        setNewStaffAccount((prev) => ({
+          ...prev,
+          location: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+        }));
+        toast({ title: "Location found", description: "Map updated to your current position." });
+      },
+      (err) => {
+        clearTimeout(timer);
+        const code = typeof err.code === "number" ? err.code : -1;
+        if (code === 3 || code === 2) {
+          fallbackToIP();
+          return;
+        }
+        setIsLocating(false);
+        const message =
+          code === 1
+            ? "Location permission denied. Please allow access in your browser."
+            : "Could not fetch your location.";
+        toast({ title: "Location error", description: message, variant: "destructive" });
+      },
+      { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 },
+    );
   };
   async function loadRecentApiBookings(options: { includeUsers: boolean }) {
     setLoadingApiBookings(true);
@@ -201,7 +321,14 @@ const AdminDashboard = () => {
     })();
   }, []);
   useEffect(() => {
-    setServices(listServices(vehicleType));
+    (async () => {
+      try {
+        const items = await listServicesApi(vehicleType);
+        setServices(items);
+      } catch (err) {
+        console.error("Failed to load services", err);
+      }
+    })();
   }, [vehicleType]);
   useEffect(() => {
     if (tab === "recent-bookings" || tab === "dashboard") {
@@ -490,7 +617,9 @@ const AdminDashboard = () => {
                       <label className="mb-1 block text-sm font-medium">Selected Location</label>
                       <div className="flex items-center gap-2">
                         <Input value={newMerchant.location} readOnly />
-                        <Button type="button" variant="outline" onClick={useMyLocation}>Use My Location</Button>
+                        <Button type="button" variant="outline" disabled={isLocating} onClick={useMyLocation}>
+                          {isLocating ? "Locating..." : "Use My Location"}
+                        </Button>
                       </div>
                       <div className="mt-3 rounded-lg border">
                         <MapContainer {...merchantMapProps}>
@@ -553,9 +682,11 @@ const AdminDashboard = () => {
                   <div>
                     <label className="mb-1 block text-sm font-medium">Selected Location</label>
                     <div className="flex items-center gap-2">
-                      <Input value={newStaffAccount.location} readOnly />
-                      <Button type="button" variant="outline" onClick={useMyLocationStaff}>Use My Location</Button>
-                    </div>
+                        <Input value={newStaffAccount.location} readOnly />
+                        <Button type="button" variant="outline" disabled={isLocating} onClick={useMyLocationStaff}>
+                          {isLocating ? "Locating..." : "Use My Location"}
+                        </Button>
+                      </div>
                     <div className="mt-3 rounded-lg border">
                       <MapContainer {...staffMapProps}>
                         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
@@ -673,11 +804,17 @@ const AdminDashboard = () => {
                       <Input type="number" value={newService.price} onChange={(e) => setNewService({ ...newService, price: Number(e.target.value) })} />
                     </div>
                     <Button
-                      onClick={() => {
+                      onClick={async () => {
                         if (!newService.title) return;
-                        addService({ vehicle: vehicleType, title: newService.title, desc: newService.desc, price: newService.price, active: true });
-                        setNewService({ title: "", desc: "", price: 0 });
-                        setServices(listServices(vehicleType));
+                        try {
+                          await createServiceApi({ vehicle: vehicleType, title: newService.title, desc: newService.desc, price: newService.price });
+                          setNewService({ title: "", desc: "", price: 0 });
+                          const items = await listServicesApi(vehicleType);
+                          setServices(items);
+                          toast({ title: "Service added", description: "Service saved to MongoDB" });
+                        } catch (err) {
+                          toast({ title: "Failed to add service", description: String(err), variant: "destructive" });
+                        }
                       }}
                       className="w-full gradient-accent border-0 text-accent-foreground"
                     >
@@ -702,10 +839,39 @@ const AdminDashboard = () => {
                     className="w-24"
                     type="number"
                     defaultValue={s.price}
-                    onBlur={(e) => { setServicePrice(s.id, Number(e.target.value)); setServices(listServices(vehicleType)); }}
+                    onBlur={async (e) => { 
+                      const newPrice = Number(e.target.value);
+                      if (newPrice === s.price) return;
+                      try {
+                        await updateServiceApi(s.id, { price: newPrice });
+                        const items = await listServicesApi(vehicleType);
+                        setServices(items);
+                        toast({ title: "Price updated" });
+                      } catch (err) {
+                        toast({ title: "Failed to update price", variant: "destructive" });
+                      }
+                    }}
                   />
-                  <Button size="sm" variant="outline" onClick={() => { updateService(s.id, { title: s.title, desc: s.desc }); setServices(listServices(vehicleType)); }}>Update</Button>
-                  <Button size="sm" variant="destructive" onClick={() => { deleteService(s.id); setServices(listServices(vehicleType)); }}>Delete</Button>
+                  <Button size="sm" variant="outline" onClick={async () => { 
+                    try {
+                      await updateServiceApi(s.id, { title: s.title, desc: s.desc }); 
+                      const items = await listServicesApi(vehicleType);
+                      setServices(items);
+                      toast({ title: "Service updated" });
+                    } catch (err) {
+                      toast({ title: "Failed to update service", variant: "destructive" });
+                    }
+                  }}>Update</Button>
+                  <Button size="sm" variant="destructive" onClick={async () => { 
+                    try {
+                      await deleteServiceApi(s.id); 
+                      const items = await listServicesApi(vehicleType);
+                      setServices(items);
+                      toast({ title: "Service deleted" });
+                    } catch (err) {
+                      toast({ title: "Failed to delete service", variant: "destructive" });
+                    }
+                  }}>Delete</Button>
                 </div>
               </div>
             ))}
@@ -950,38 +1116,48 @@ const AdminDashboard = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Assign staff</span>
-                    <Select
-                      value={String(b.staffId || "")}
-                      onValueChange={async (v) => {
-                        try {
-                          setApiBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, staffId: v } : x)));
-                          await patchBookingApi(b.id, { action: "assign_staff", staffId: v });
-                          const next = await listApiBookings({ limit: 100 });
-                          setApiBookings(next);
-                          addNotificationForUser(v, "New Task", `Booking assigned: ${b.service}`);
-                          toast({ title: "Staff assigned", description: v });
-                        } catch (err) {
-                          const message = err instanceof Error ? err.message : String(err);
-                          toast({ title: "Failed to assign staff", description: message, variant: "destructive" });
-                          const next = await listApiBookings({ limit: 100 });
-                          setApiBookings(next);
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="w-44"><SelectValue placeholder="Select staff" /></SelectTrigger>
-                      <SelectContent>
-                        {users.filter((u) => u.role === "staff" && !!u.staffOnline).length === 0 ? (
-                          <SelectItem disabled value="_">No online staff</SelectItem>
-                        ) : (
-                          users.filter((u) => u.role === "staff" && !!u.staffOnline).map((s) => (
-                            <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {/* Assign staff - only for pickups */}
+                  {(() => {
+                    const loc = b.location || {};
+                    const hasLat = typeof loc.lat === "number" && !isNaN(loc.lat);
+                    const hasLng = typeof loc.lng === "number" && !isNaN(loc.lng);
+                    const hasAddr = typeof loc.formatted === "string" && loc.formatted.trim().length > 0 && loc.formatted.trim() !== "-";
+                    if (!(hasLat || hasLng || hasAddr)) return null;
+                    return (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Assign staff</span>
+                        <Select
+                          value={String(b.staffId || "")}
+                          onValueChange={async (v) => {
+                            try {
+                              setApiBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, staffId: v } : x)));
+                              await patchBookingApi(b.id, { action: "assign_staff", staffId: v });
+                              const next = await listApiBookings({ limit: 100 });
+                              setApiBookings(next);
+                              addNotificationForUser(v, "New Task", `Booking assigned: ${b.service}`);
+                              toast({ title: "Staff assigned", description: v });
+                            } catch (err) {
+                              const message = err instanceof Error ? err.message : String(err);
+                              toast({ title: "Failed to assign staff", description: message, variant: "destructive" });
+                              const next = await listApiBookings({ limit: 100 });
+                              setApiBookings(next);
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="w-44"><SelectValue placeholder="Select staff" /></SelectTrigger>
+                          <SelectContent>
+                            {users.filter((u) => u.role === "staff" && !!u.staffOnline).length === 0 ? (
+                              <SelectItem disabled value="_">No online staff</SelectItem>
+                            ) : (
+                              users.filter((u) => u.role === "staff" && !!u.staffOnline).map((s) => (
+                                <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    );
+                  })()}
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">Update status</span>
                     <Select
@@ -1153,17 +1329,38 @@ const AdminDashboard = () => {
                         size="sm"
                         className="gradient-accent border-0 text-accent-foreground"
                         onClick={async () => {
-                          if (!b.merchantId || !b.staffId) {
-                            toast({ title: "Select merchant and staff", description: "Assign both merchant and staff before approval", variant: "destructive" });
+                          const loc = b.location || {};
+                          const hasLat = typeof loc.lat === "number" && !isNaN(loc.lat);
+                          const hasLng = typeof loc.lng === "number" && !isNaN(loc.lng);
+                          const hasAddr = typeof loc.formatted === "string" && loc.formatted.trim().length > 0 && loc.formatted.trim() !== "-";
+                          const isPickup = hasLat || hasLng || hasAddr;
+
+                          if (!b.merchantId || (isPickup && !b.staffId)) {
+                            const desc = isPickup ? "Assign both merchant and staff before approval (Pickup required)" : "Assign merchant before approval (Visit required)";
+                            toast({ title: "Assignment required", description: desc, variant: "destructive" });
                             return;
                           }
                           const ok = window.confirm(`Approve booking for ${b.customerEmail}?`);
                           if (!ok) return;
-                          await patchBookingApi(b.id, { action: "approve" });
-                          const next = await listApiBookings({ limit: 100 });
-                          setApiBookings(next);
-                          addNotificationForUser(String(b.merchantId), "New Booking", `Assigned booking for ${b.customerEmail}`);
-                          toast({ title: "Approved", description: b.customerEmail });
+                          try {
+                            // Optimistic update
+                            const nextStatus = isPickup ? "ASSIGNED" : "AT_SERVICE_CENTER";
+                            setApiBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, status: nextStatus } : x)));
+
+                            await patchBookingApi(b.id, { action: "approve" });
+                            const next = await listApiBookings({ limit: 100 });
+                            setApiBookings(next);
+                            addNotificationForUser(String(b.merchantId), "New Booking", `Assigned booking for ${b.customerEmail}`);
+                            if (isPickup && b.staffId) {
+                              addNotificationForUser(String(b.staffId), "New Task", `Booking assigned: ${b.service}`);
+                            }
+                            toast({ title: "Approved", description: b.customerEmail });
+                          } catch (err) {
+                            const message = err instanceof Error ? err.message : String(err);
+                            toast({ title: "Approval failed", description: message, variant: "destructive" });
+                            const next = await listApiBookings({ limit: 100 });
+                            setApiBookings(next);
+                          }
                         }}
                       >
                         Approve
@@ -1173,10 +1370,22 @@ const AdminDashboard = () => {
                         variant="outline"
                         className="text-destructive border-destructive/30"
                         onClick={async () => {
-                          await patchBookingApi(b.id, { action: "reject" });
-                          const next = await listApiBookings({ limit: 100 });
-                          setApiBookings(next);
-                          toast({ title: "Rejected", description: b.customerEmail });
+                          const ok = window.confirm(`Reject booking for ${b.customerEmail}?`);
+                          if (!ok) return;
+                          try {
+                            // Optimistic update
+                            setApiBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, status: "REVISION_REQUIRED" } : x)));
+
+                            await patchBookingApi(b.id, { action: "reject" });
+                            const next = await listApiBookings({ limit: 100 });
+                            setApiBookings(next);
+                            toast({ title: "Rejected", description: b.customerEmail });
+                          } catch (err) {
+                            const message = err instanceof Error ? err.message : String(err);
+                            toast({ title: "Rejection failed", description: message, variant: "destructive" });
+                            const next = await listApiBookings({ limit: 100 });
+                            setApiBookings(next);
+                          }
                         }}
                       >
                         Reject

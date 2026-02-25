@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useEffect, useMemo, useState } from "react";
-import { getAuth, listApiBookings, listUsersFromApi, getCurrentUserFromApi, patchBookingApi, addNotificationForUser, getMerchantDashboardStats, type ApiBooking, type ApiUser } from "@/lib/utils";
+import { getAuth, setAuth, listApiBookings, listUsersFromApi, getCurrentUserFromApi, patchBookingApi, addNotificationForUser, getMerchantDashboardStats, type ApiBooking, type ApiUser } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -511,24 +511,36 @@ const MerchantDashboard = () => {
                         </Dialog>
                       );
                     })()}
-                    <span className="text-xs text-muted-foreground">Assign staff</span>
-                    <Select
-                      value={String(b.staffId || "")}
-                      onValueChange={async (v) => {
-                        await patchBookingApi(b.id, { action: "assign_staff", staffId: v });
-                        const list = await listApiBookings({ limit: 100 });
-                        setBookings(list);
-                        addNotificationForUser(v, "New Task", `Booking assigned: ${b.service}`);
-                        toast({ title: "Staff assigned", description: v });
-                      }}
-                    >
-                      <SelectTrigger className="w-44"><SelectValue placeholder="Select staff" /></SelectTrigger>
-                      <SelectContent>
-                        {users.filter((u) => u.role === "staff").map((s) => (
-                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {/* Assign staff - only for pickups */}
+                    {(() => {
+                      const loc = b.location || {};
+                      const hasLat = typeof loc.lat === "number" && !isNaN(loc.lat);
+                      const hasLng = typeof loc.lng === "number" && !isNaN(loc.lng);
+                      const hasAddr = typeof loc.formatted === "string" && loc.formatted.trim().length > 0 && loc.formatted.trim() !== "-";
+                      if (!(hasLat || hasLng || hasAddr)) return null;
+                      return (
+                        <>
+                          <span className="text-xs text-muted-foreground">Assign staff</span>
+                          <Select
+                            value={String(b.staffId || "")}
+                            onValueChange={async (v) => {
+                              await patchBookingApi(b.id, { action: "assign_staff", staffId: v });
+                              const list = await listApiBookings({ limit: 100 });
+                              setBookings(list);
+                              addNotificationForUser(v, "New Task", `Booking assigned: ${b.service}`);
+                              toast({ title: "Staff assigned", description: v });
+                            }}
+                          >
+                            <SelectTrigger className="w-44"><SelectValue placeholder="Select staff" /></SelectTrigger>
+                            <SelectContent>
+                              {users.filter((u) => u.role === "staff").map((s) => (
+                                <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </>
+                      );
+                    })()}
                     <button
                       className="rounded-md border px-3 py-1 text-sm"
                       onClick={async () => {

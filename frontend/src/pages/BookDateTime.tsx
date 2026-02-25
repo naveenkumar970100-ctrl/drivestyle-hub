@@ -11,6 +11,9 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useToast } from "@/hooks/use-toast";
 
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
+
 const fadeUp = { initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.4 } };
 
 const BookDateTime = () => {
@@ -25,6 +28,8 @@ const BookDateTime = () => {
   const [reg, setReg] = useState<string>("");
   const [addr, setAddr] = useState<string>("");
   const [custPos, setCustPos] = useState<[number, number] | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [visitType, setVisitType] = useState<"pickup" | "visit">("pickup");
 
   const iconDefaultProto = L.Icon.Default.prototype as unknown as { _getIconUrl?: () => string };
   delete iconDefaultProto._getIconUrl;
@@ -81,7 +86,14 @@ const BookDateTime = () => {
       query.set("lat", String(custPos[0]));
       query.set("lng", String(custPos[1]));
     }
-    if (addr) query.set("addr", addr);
+    if (visitType === "pickup") {
+      if (custPos) {
+        query.set("lat", String(custPos[0]));
+        query.set("lng", String(custPos[1]));
+      }
+      if (addr) query.set("addr", addr);
+    }
+    query.set("visitType", visitType);
     navigate(`/checkout?${query.toString()}`);
   };
 
@@ -111,11 +123,26 @@ const BookDateTime = () => {
             )}
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Pickup Location</label>
-            <div className="space-y-2">
-              <Input placeholder="Address (optional)" value={addr} onChange={(e) => setAddr(e.target.value)} />
-            </div>
+            <label className="mb-2 block text-sm font-medium">Service Type</label>
+            <RadioGroup defaultValue="pickup" value={visitType} onValueChange={(v: "pickup" | "visit") => setVisitType(v)} className="flex items-center gap-6">
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="pickup" id="r-pickup" />
+                <Label htmlFor="r-pickup">Pickup Vehicle</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="visit" id="r-visit" />
+                <Label htmlFor="r-visit">Visit Merchant</Label>
+              </div>
+            </RadioGroup>
           </div>
+          {visitType === "pickup" && (
+            <div>
+              <label className="mb-1 block text-sm font-medium">Pickup Location</label>
+              <div className="space-y-2">
+                <Input placeholder="Address (optional)" value={addr} onChange={(e) => setAddr(e.target.value)} />
+              </div>
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-sm font-medium">Preferred Date</label>
             <Input type="date" name="date" required />
@@ -126,56 +153,87 @@ const BookDateTime = () => {
           </div>
           <Button type="submit" className="w-full gradient-accent border-0 text-accent-foreground">Book Now</Button>
         </motion.form>
-        <motion.div {...fadeUp} transition={{ delay: 0.25 }} className="rounded-xl border bg-card p-6 shadow-card">
-          <h2 className="font-heading text-lg font-bold mb-3">Pickup Location Map</h2>
-          <div className="rounded-lg border overflow-hidden">
-            <MapContainer {...mapProps}>
-              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              <ClickPicker onPick={(latlng) => setCustPos([latlng.lat, latlng.lng])} />
-              <CenterOnPos pos={custPos} />
-              {custPos && <Marker position={custPos} />}
-            </MapContainer>
-          </div>
-          <div className="mt-3 flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                if (!("geolocation" in navigator)) {
-                  toast({ title: "Location unavailable", description: "Your browser does not support location access.", variant: "destructive" });
-                  return;
-                }
-                navigator.geolocation.getCurrentPosition(
-                  (pos) => {
-                    const { latitude, longitude } = pos.coords;
-                    setCustPos([latitude, longitude]);
-                    setAddr((prev) => (prev && prev.trim().length > 0 ? prev : `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`));
-                  },
-                  (err) => {
-                    const code = typeof err.code === "number" ? err.code : -1;
-                    if (code === 3 && custPos) {
-                      return;
+        {visitType === "pickup" && (
+          <motion.div {...fadeUp} transition={{ delay: 0.25 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <h2 className="font-heading text-lg font-bold mb-3">Pickup Location Map</h2>
+            <div className="rounded-lg border overflow-hidden">
+              <MapContainer {...mapProps}>
+                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                <ClickPicker onPick={(latlng) => setCustPos([latlng.lat, latlng.lng])} />
+                <CenterOnPos pos={custPos} />
+                {custPos && <Marker position={custPos} />}
+              </MapContainer>
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isLocating}
+                onClick={() => {
+                  if (!("geolocation" in navigator)) {
+                    toast({ title: "Location unavailable", description: "Your browser does not support location access.", variant: "destructive" });
+                    return;
+                  }
+                  setIsLocating(true);
+                  
+                  const fallbackToIP = async () => {
+                    try {
+                      const res = await fetch("http://ip-api.com/json");
+                      const data = await res.json();
+                      if (data.status === "success") {
+                        setCustPos([data.lat, data.lon]);
+                        setAddr(`${data.lat.toFixed(6)}, ${data.lon.toFixed(6)}`);
+                        toast({ title: "Location found (via IP)", description: `Detected: ${data.city}, ${data.regionName}` });
+                      } else {
+                        throw new Error("IP lookup failed");
+                      }
+                    } catch (e) {
+                      toast({ title: "Location error", description: "Could not fetch your location via GPS or IP.", variant: "destructive" });
+                    } finally {
+                      setIsLocating(false);
                     }
-                    const message =
-                      code === 1
-                        ? "Location permission denied. Please allow access in your browser."
-                        : code === 2
-                        ? "Location unavailable. Try again in an open area."
-                        : code === 3
-                        ? "Getting location timed out. Please try again."
-                        : "Could not fetch your location.";
-                    toast({ title: "Location error", description: message, variant: "destructive" });
-                  },
-                  { enableHighAccuracy: true, timeout: 20000, maximumAge: 300000 },
-                );
-              }}
-            >
-              Use My Location
-            </Button>
-            {custPos && <span className="text-xs text-muted-foreground">Selected: {custPos[0].toFixed(5)}, {custPos[1].toFixed(5)}</span>}
-          </div>
-        </motion.div>
+                  };
+
+                  const timer = setTimeout(() => {
+                    if (isLocating) {
+                      fallbackToIP();
+                    }
+                  }, 8000);
+
+                  navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                      clearTimeout(timer);
+                      setIsLocating(false);
+                      const { latitude, longitude } = pos.coords;
+                      setCustPos([latitude, longitude]);
+                      setAddr(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+                      toast({ title: "Location found", description: "Map updated to your current position." });
+                    },
+                    (err) => {
+                      clearTimeout(timer);
+                      const code = typeof err.code === "number" ? err.code : -1;
+                      if (code === 3 || code === 2) {
+                        fallbackToIP();
+                        return;
+                      }
+                      setIsLocating(false);
+                      const message =
+                        code === 1
+                          ? "Location permission denied. Please allow access in your browser."
+                          : "Could not fetch your location.";
+                      toast({ title: "Location error", description: message, variant: "destructive" });
+                    },
+                    { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 }
+                  );
+                }}
+              >
+                {isLocating ? "Locating..." : "Use My Location"}
+              </Button>
+              {custPos && <span className="text-xs text-muted-foreground">Selected: {custPos[0].toFixed(5)}, {custPos[1].toFixed(5)}</span>}
+            </div>
+          </motion.div>
+        )}
         </div>
       </div>
     </Layout>
@@ -196,8 +254,16 @@ function ClickPicker({ onPick }: { onPick: (latlng: L.LatLng) => void }) {
 function CenterOnPos({ pos }: { pos: [number, number] | null }) {
   const map = useMap();
   useEffect(() => {
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [map]);
+
+  useEffect(() => {
     if (pos) {
       map.setView(pos, 13);
+      map.invalidateSize();
     }
   }, [pos, map]);
   return null;

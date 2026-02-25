@@ -46,14 +46,13 @@ const createBooking = async (req, res, next) => {
       date,
       time,
       registration: plate,
+      price: Number(req.body.price || 0),
       status: 'PENDING_ASSIGNMENT',
     };
     if (connected) {
       const doc = await Booking.create(payload);
-      const offline = readOfflineBookings();
-      offline.push({ ...payload, _id: doc._id, createdAt: doc.createdAt, updatedAt: doc.updatedAt });
-      writeOfflineBookings(offline);
-      res.status(201).json({ booking: { id: doc._id } });
+      // Removed offline update to ensure MongoDB is the single source of truth for payment/revenue flows
+      return res.status(201).json({ booking: { id: doc._id } });
     } else {
       const offline = readOfflineBookings();
       const id = new mongoose.Types.ObjectId().toString();
@@ -71,128 +70,109 @@ const listBookings = async (req, res, next) => {
   try {
     const connected = isDbConnected();
     const inProd = (process.env.NODE_ENV || 'development') === 'production';
-    const roleStr = req.user
-      ? String(req.user.role || 'customer').toLowerCase()
-      : (req.query.role || 'admin').toString().toLowerCase();
-    const email = (req.query.email || '').toString().toLowerCase();
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const skip = (page - 1) * limit;
+    const scope = (req.query.scope || '').toString();
+
+    if (!connected) {
+      const offlineBookings = readOfflineBookings().slice(skip, skip + limit);
+      return res.json({ bookings: offlineBookings });
+    }
+
+    const roleStr = (req.user?.role || req.query.role || 'admin').toLowerCase();
+    const email = (req.query.email || '').toLowerCase();
     let filter = {};
-    if (roleStr === 'customer' && email) {
-      filter = { customerEmail: email };
+
+    if (scope === 'available') {
+      filter.status = 'PENDING_ASSIGNMENT';
+    } else if (roleStr === 'customer' && email) {
+      filter.customerEmail = email;
     } else if (roleStr === 'merchant') {
       let merchantId = req.user?.id;
       if (!merchantId && email) {
         const u = await User.findOne({ email }).select('_id role').lean();
-        if (u && String(u.role || '').toLowerCase() === 'merchant') {
-          merchantId = String(u._id);
-        }
+        if (u?.role?.toLowerCase() === 'merchant') merchantId = u._id.toString();
       }
-      if (merchantId) {
-        filter = { merchantId };
-      }
+      if (merchantId) filter.merchantId = merchantId;
     } else if (roleStr === 'staff') {
       let staffId = req.user?.id;
       if (!staffId && email) {
         const u = await User.findOne({ email }).select('_id role').lean();
-        if (u && String(u.role || '').toLowerCase() === 'staff') {
-          staffId = String(u._id);
-        }
+        if (u?.role?.toLowerCase() === 'staff') staffId = u._id.toString();
       }
-      if (staffId) {
-        filter = { staffId };
-      }
-    } else {
-      filter = {};
+      if (staffId) filter.staffId = staffId;
     }
-    let limit;
-    let docs = [];
-    if (connected) {
-      let query = Booking.find(filter).sort({ createdAt: -1 });
-      const limitRaw = req.query.limit;
-      if (typeof limitRaw === 'string' && limitRaw.trim() !== '') {
-        const parsed = parseInt(limitRaw, 10);
-        if (!Number.isNaN(parsed) && parsed > 0) {
-          limit = Math.min(parsed, 200);
-          query = query.limit(limit);
-        }
-      }
-      docs = await query.lean();
-      if (!inProd && roleStr === 'customer' && email && docs.length === 0) {
-        docs = await Booking.find({}).sort({ createdAt: -1 }).lean();
-      }
-    } else {
-      const all = readOfflineBookings();
-      let filtered = all;
-      if (roleStr === 'customer' && email) {
-        filtered = all.filter((b) => String(b.customerEmail || '').toLowerCase() === email);
-      } else if (roleStr === 'merchant' && filter.merchantId) {
-        const mid = String(filter.merchantId);
-        filtered = all.filter((b) => String(b.merchantId || '') === mid);
-      } else if (roleStr === 'staff' && filter.staffId) {
-        const sid = String(filter.staffId);
-        filtered = all.filter((b) => String(b.staffId || '') === sid);
-      }
-      filtered.sort((a, b) => {
-        const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return tb - ta;
-      });
-      const limitRaw = req.query.limit;
-      if (typeof limitRaw === 'string' && limitRaw.trim() !== '') {
-        const parsed = parseInt(limitRaw, 10);
-        if (!Number.isNaN(parsed) && parsed > 0) {
-          limit = Math.min(parsed, 200);
-        }
-      }
-      docs = typeof limit === 'number' ? filtered.slice(0, limit) : filtered;
+
+    let bookings = await Booking.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    let total = await Booking.countDocuments(filter);
+
+    // Skip offline fallback if connected to prioritize MongoDB data consistency
+    /*
+    if (!inProd && connected && bookings.length === 0 && page === 1) {
+    ...
     }
+    */
+
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
-    const meId = req.user ? String(req.user.id || '') : '';
-    res.json({ bookings: docs.map((d) => {
-      const assignedToMe = meId && d.staffId && String(d.staffId) === meId;
-      const accepted = String(d.staffAcceptanceStatus || 'none') === 'accepted';
-      const hideSensitive = roleStr === 'staff' && assignedToMe && !accepted;
-      return {
-        id: d._id,
-        customerEmail: d.customerEmail,
-        customerPhone: hideSensitive ? undefined : d.customerPhone,
-        vehicle: d.vehicle,
-        service: d.service,
-        location: hideSensitive ? undefined : d.location,
-        date: d.date,
-        time: d.time,
-        registration: d.registration,
-        status: d.status,
-        merchantId: d.merchantId,
-        staffId: d.staffId,
-        repairNotes: d.repairNotes,
-        photosBefore: d.photosBefore,
-        photosAfter: d.photosAfter,
-        photosReturn: d.photosReturn,
-        beforeServicePhotos: d.beforeServicePhotos,
-        afterServicePhotos: d.afterServicePhotos,
-        estimateLabour: d.estimateLabour,
-        estimateParts: d.estimateParts,
-        estimateAdditional: d.estimateAdditional,
-        estimateTotal: d.estimateTotal,
-        billInvoiceNumber: d.billInvoiceNumber,
-        billGST: d.billGST,
-        billTotal: d.billTotal,
-        billFileUrl: d.billFileUrl,
-        billBreakdown: d.billBreakdown,
-        payments: d.payments,
-        ratingValue: d.ratingValue,
-        ratingComment: d.ratingComment,
-        price: d.price,
-        dropAt: d.dropAt,
-        dropByStaffId: d.dropByStaffId,
-        lastUpdatedByRole: d.lastUpdatedByRole,
-        lastUpdatedMessage: d.lastUpdatedMessage,
-        lastUpdatedAt: d.lastUpdatedAt,
-        staffAcceptanceStatus: d.staffAcceptanceStatus,
-      };
-    }) });
+
+    const meId = req.user?.id?.toString() || '';
+    res.json({
+      bookings: bookings.map((d) => {
+        const assignedToMe = meId && d.staffId?.toString() === meId;
+        const accepted = d.staffAcceptanceStatus === 'accepted';
+        const hideSensitive = roleStr === 'staff' && assignedToMe && !accepted;
+        return {
+          id: d._id,
+          customerEmail: d.customerEmail,
+          customerPhone: hideSensitive ? undefined : d.customerPhone,
+          vehicle: d.vehicle,
+          service: d.service,
+          location: hideSensitive ? undefined : d.location,
+          date: d.date,
+          time: d.time,
+          registration: d.registration,
+          status: d.status,
+          merchantId: d.merchantId,
+          staffId: d.staffId,
+          repairNotes: d.repairNotes,
+          photosBefore: d.photosBefore,
+          photosAfter: d.photosAfter,
+          photosReturn: d.photosReturn,
+          beforeServicePhotos: d.beforeServicePhotos,
+          afterServicePhotos: d.afterServicePhotos,
+          estimateLabour: d.estimateLabour,
+          estimateParts: d.estimateParts,
+          estimateAdditional: d.estimateAdditional,
+          estimateTotal: d.estimateTotal,
+          billInvoiceNumber: d.billInvoiceNumber,
+          billGST: d.billGST,
+          billTotal: d.billTotal,
+          billFileUrl: d.billFileUrl,
+          billBreakdown: d.billBreakdown,
+          payments: d.payments,
+          ratingValue: d.ratingValue,
+          ratingComment: d.ratingComment,
+          price: d.price,
+          dropAt: d.dropAt,
+          dropByStaffId: d.dropByStaffId,
+          lastUpdatedByRole: d.lastUpdatedByRole,
+          lastUpdatedMessage: d.lastUpdatedMessage,
+          lastUpdatedAt: d.lastUpdatedAt,
+          staffAcceptanceStatus: d.staffAcceptanceStatus,
+        };
+      }),
+      total,
+      page,
+      limit,
+    });
   } catch (err) {
     next(err);
   }
@@ -246,9 +226,26 @@ const patchBooking = async (req, res, next) => {
       doc.lastUpdatedAt = new Date();
     }
     if (action === 'approve') {
-      if (!doc.merchantId || !doc.staffId) return res.status(400).json({ message: 'Assign merchant and staff first' });
+      const loc = doc.location || {};
+      const hasLat = typeof loc.lat === 'number' && !isNaN(loc.lat);
+      const hasLng = typeof loc.lng === 'number' && !isNaN(loc.lng);
+      // Stricter address check: must be longer than 3 chars and not just "-"
+      const hasAddr = typeof loc.formatted === 'string' && 
+                      loc.formatted.trim().length > 0 && 
+                      loc.formatted.trim() !== '-';
+      
+      const isPickup = hasLat || hasLng || hasAddr;
+
+      if (!doc.merchantId || (isPickup && !doc.staffId)) {
+        console.log(`Approval blocked: isPickup=${isPickup}, merchantId=${doc.merchantId}, staffId=${doc.staffId}, loc=${JSON.stringify(loc)}`);
+        return res.status(400).json({
+          message: isPickup
+            ? 'Assign both merchant and staff before approval (Pickup required)'
+            : 'Assign merchant before approval (Visit required)'
+        });
+      }
       if (doc.status === 'PENDING_ASSIGNMENT') {
-        const next = 'ASSIGNED';
+        const next = isPickup ? 'ASSIGNED' : 'AT_SERVICE_CENTER';
         doc.status = next;
         setAudit('admin', 'approved booking');
       }

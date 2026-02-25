@@ -1,4 +1,4 @@
-import { DashboardLayout } from "@/components/DashboardLayout";
+  import { DashboardLayout } from "@/components/DashboardLayout";
 import { motion } from "framer-motion";
 import { ClipboardList, CheckCircle, Clock, AlertCircle, Phone, MapPin, CheckCircle2, Navigation, Loader2, Power } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -780,7 +780,7 @@ const StaffDashboard = () => {
           return (
             <Dialog key={`dlg-${t.id}`} open={open} onOpenChange={(v) => setOpenId(v ? t.id : null)}>
               <DialogTrigger asChild><span /></DialogTrigger>
-              <DialogContent className="max-w-3xl">
+              <DialogContent className="max-w-3xl" style={{ zIndex: 1000 }}>
                 <DialogHeader><DialogTitle>Order Details</DialogTitle></DialogHeader>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">

@@ -35,6 +35,7 @@ const Checkout = () => {
       return;
     }
     try {
+      const priceNum = Number(price.replace(/[^0-9]/g, "")) || 0;
       await createBookingApi({
         customerEmail: session.email,
         vehicle: vehicle === "bike" ? "bike" : "car",
@@ -43,6 +44,7 @@ const Checkout = () => {
         date,
         time,
         registration: reg.trim(),
+        price: priceNum,
       });
       toast({ title: "Booking created", description: "Waiting for admin approval" });
       navigate(`/dashboard/customer`);

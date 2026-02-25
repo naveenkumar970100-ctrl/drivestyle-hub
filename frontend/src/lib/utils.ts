@@ -1463,6 +1463,128 @@ function seedServicesIfEmpty() {
   writeServices(seed);
 }
 
+export async function listServicesApi(vehicle?: VehicleType): Promise<ServiceItem[]> {
+  const session = getAuth();
+  const endpoints = [
+    `/api/services?vehicleType=${vehicle || ""}`,
+    `http://localhost:5000/api/services?vehicleType=${vehicle || ""}`,
+  ];
+  let lastErr = "Failed to fetch services";
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+        },
+      });
+      const data = await res.json();
+      if (res.ok && data && Array.isArray(data.services)) {
+        return data.services.map((s: any) => ({
+          id: s._id,
+          title: s.title,
+          desc: s.desc,
+          price: s.price,
+          vehicle: s.vehicleType,
+          active: s.isActive,
+        }));
+      }
+      lastErr = data.message || `HTTP ${res.status}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
+}
+
+export async function createServiceApi(entry: Omit<ServiceItem, "id" | "active">): Promise<void> {
+  const session = getAuth();
+  const endpoints = [
+    "/api/services",
+    "http://localhost:5000/api/services",
+  ];
+  let lastErr = "Failed to create service";
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+        },
+        body: JSON.stringify({
+          title: entry.title,
+          desc: entry.desc,
+          price: entry.price,
+          vehicleType: entry.vehicle,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) return;
+      lastErr = data.message || `HTTP ${res.status}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
+}
+
+export async function updateServiceApi(id: string, patch: Partial<Omit<ServiceItem, "id" | "active">>): Promise<void> {
+  const session = getAuth();
+  const endpoints = [
+    `/api/services/${encodeURIComponent(id)}`,
+    `http://localhost:5000/api/services/${encodeURIComponent(id)}`,
+  ];
+  let lastErr = "Failed to update service";
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+        },
+        body: JSON.stringify({
+          ...(patch.title ? { title: patch.title } : {}),
+          ...(patch.desc ? { desc: patch.desc } : {}),
+          ...(patch.price ? { price: patch.price } : {}),
+          ...(patch.vehicle ? { vehicleType: patch.vehicle } : {}),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) return;
+      lastErr = data.message || `HTTP ${res.status}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
+}
+
+export async function deleteServiceApi(id: string): Promise<void> {
+  const session = getAuth();
+  const endpoints = [
+    `/api/services/${encodeURIComponent(id)}`,
+    `http://localhost:5000/api/services/${encodeURIComponent(id)}`,
+  ];
+  let lastErr = "Failed to delete service";
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: "DELETE",
+        headers: {
+          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+        },
+      });
+      const data = await res.json();
+      if (res.ok) return;
+      lastErr = data.message || `HTTP ${res.status}`;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : "Network error";
+    }
+  }
+  throw new Error(lastErr);
+}
+
 export function listServices(vehicle?: VehicleType): ServiceItem[] {
   seedServicesIfEmpty();
   const items = readServices().filter((s) => s.active);

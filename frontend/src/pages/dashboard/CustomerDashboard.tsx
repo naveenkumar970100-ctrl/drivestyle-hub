@@ -5,13 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { useEffect, useState, useMemo } from "react";
-import { getAuth, setAuth, listCustomerVehiclesFromApi, createCustomerVehicleApi, deleteCustomerVehicleFromApi, fetchVehicleDetails, listApiBookings, createBookingApi, listInvoices, downloadInvoice, listUsersFromApi, updateMyProfileApi, getCurrentUserFromApi, patchBookingApi, type CustomerVehicle, type VehicleType, type ApiBooking, type Invoice, type ApiUser } from "@/lib/utils";
+import { getAuth, setAuth, listCustomerVehiclesFromApi, createCustomerVehicleApi, deleteCustomerVehicleFromApi, fetchVehicleDetails, listApiBookings, createBookingApi, listInvoices, downloadInvoice, listUsersFromApi, updateMyProfileApi, getCurrentUserFromApi, patchBookingApi, listServicesApi, type CustomerVehicle, type VehicleType, type ApiBooking, type Invoice, type ApiUser, type ServiceItem } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "react-router-dom";
-import { MapContainer, TileLayer, Marker, useMapEvents, type MapContainerProps } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap, type MapContainerProps } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -21,6 +21,7 @@ const CustomerDashboard = () => {
   const { toast } = useToast();
   const { search } = useLocation();
   const [apiBookings, setApiBookings] = useState<ApiBooking[]>([]);
+  const [isLocating, setIsLocating] = useState(false);
   const [users, setUsers] = useState<ApiUser[]>([]);
   const [vehicles, setVehicles] = useState<CustomerVehicle[]>([]);
   const [bookingForm, setBookingForm] = useState<{ vehicle: VehicleType; service: string; registration?: string; location?: string; date?: string; time?: string }>({ vehicle: "car", service: "" });
@@ -53,6 +54,7 @@ const CustomerDashboard = () => {
   const [editOpen, setEditOpen] = useState(false);
   const [tempName, setTempName] = useState<string>(profileName);
   const [reviewBookingId, setReviewBookingId] = useState<string | null>(null);
+  const [services, setServices] = useState<ServiceItem[]>([]);
   const [reviewRating, setReviewRating] = useState<number>(5);
   const [reviewComment, setReviewComment] = useState<string>("");
   useEffect(() => {
@@ -104,6 +106,16 @@ const CustomerDashboard = () => {
             setUsers(u);
           } catch {
             setUsers([]);
+          }
+        })(),
+      );
+      tasks.push(
+        (async () => {
+          try {
+            const s = await listServicesApi();
+            setServices(s);
+          } catch {
+            setServices([]);
           }
         })(),
       );
@@ -178,6 +190,24 @@ const CustomerDashboard = () => {
                       )}
                     </div>
                     <div>
+                      <label className="mb-1 block text-sm font-medium">Select Service</label>
+                      <Select 
+                        value={bookingForm.service} 
+                        onValueChange={(v) => setBookingForm({ ...bookingForm, service: v })}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select a service" /></SelectTrigger>
+                        <SelectContent>
+                          {services
+                            .filter(s => s.vehicle === bookingForm.vehicle)
+                            .map(s => (
+                              <SelectItem key={s.id} value={s.title}>
+                                {s.title} (₹{s.price})
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
                       <label className="mb-1 block text-sm font-medium">Pickup Location</label>
                       <div className="space-y-2">
                         <Input value={bookingForm.location || ""} onChange={(e) => setBookingForm({ ...bookingForm, location: e.target.value })} placeholder="Address (optional)" />
@@ -185,6 +215,7 @@ const CustomerDashboard = () => {
                           <MapContainer {...mapProps}>
                             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                             <ClickPicker onPick={(latlng) => setCustPos([latlng.lat, latlng.lng])} />
+                            <CenterOnPos pos={custPos} />
                             {custPos && <Marker position={custPos} />}
                           </MapContainer>
                         </div>
@@ -192,40 +223,72 @@ const CustomerDashboard = () => {
                           <Button
                             variant="outline"
                             size="sm"
+                            disabled={isLocating}
                             onClick={() => {
                               if (!("geolocation" in navigator)) {
                                 toast({ title: "Location unavailable", description: "Your browser does not support location access.", variant: "destructive" });
                                 return;
                               }
+                              setIsLocating(true);
+
+                              const fallbackToIP = async () => {
+                                try {
+                                  const res = await fetch("http://ip-api.com/json");
+                                  const data = await res.json();
+                                  if (data.status === "success") {
+                                    setCustPos([data.lat, data.lon]);
+                                    setBookingForm((prev) => ({
+                                      ...prev,
+                                      location: `${data.lat.toFixed(6)}, ${data.lon.toFixed(6)}`,
+                                    }));
+                                    toast({ title: "Location found (via IP)", description: `Detected: ${data.city}, ${data.regionName}` });
+                                  } else {
+                                    throw new Error("IP lookup failed");
+                                  }
+                                } catch (e) {
+                                  toast({ title: "Location error", description: "Could not fetch your location via GPS or IP.", variant: "destructive" });
+                                } finally {
+                                  setIsLocating(false);
+                                }
+                              };
+
+                              const timer = setTimeout(() => {
+                                if (isLocating) {
+                                  fallbackToIP();
+                                }
+                              }, 8000);
+
                               navigator.geolocation.getCurrentPosition(
                                 (pos) => {
+                                  clearTimeout(timer);
+                                  setIsLocating(false);
                                   const { latitude, longitude } = pos.coords;
                                   setCustPos([latitude, longitude]);
                                   setBookingForm((prev) => ({
                                     ...prev,
-                                    location: prev.location && prev.location.trim().length > 0 ? prev.location : `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+                                    location: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
                                   }));
+                                  toast({ title: "Location found", description: "Map updated to your current position." });
                                 },
                                 (err) => {
+                                  clearTimeout(timer);
                                   const code = typeof err.code === "number" ? err.code : -1;
-                                  if (code === 3 && custPos) {
+                                  if (code === 3 || code === 2) {
+                                    fallbackToIP();
                                     return;
                                   }
+                                  setIsLocating(false);
                                   const message =
                                     code === 1
                                       ? "Location permission denied. Please allow access in your browser."
-                                      : code === 2
-                                      ? "Location unavailable. Try again in an open area."
-                                      : code === 3
-                                      ? "Getting location timed out. Please try again."
                                       : "Could not fetch your location.";
                                   toast({ title: "Location error", description: message, variant: "destructive" });
                                 },
-                                { enableHighAccuracy: true, timeout: 20000, maximumAge: 300000 },
+                                { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 },
                               );
                             }}
                           >
-                            Use My Location
+                            {isLocating ? "Locating..." : "Use My Location"}
                           </Button>
                           {custPos && <span className="text-xs text-muted-foreground">Selected: {custPos[0].toFixed(5)}, {custPos[1].toFixed(5)}</span>}
                         </div>
@@ -254,15 +317,18 @@ const CustomerDashboard = () => {
                           return;
                         }
                         try {
-                          const serviceDefault = bookingForm.vehicle === "bike" ? "Periodic Service" : "General Service";
+                          const selectedService = services.find(s => s.title === bookingForm.service && s.vehicle === bookingForm.vehicle);
+                          const finalPrice = selectedService ? selectedService.price : (bookingForm.vehicle === "bike" ? 199 : 499);
+                          
                           await createBookingApi({
                             customerEmail: session.email,
                             vehicle: bookingForm.vehicle,
-                            service: serviceDefault,
+                            service: bookingForm.service || (bookingForm.vehicle === "bike" ? "Periodic Service" : "General Service"),
                             registration: bookingForm.registration?.trim(),
                             location: custPos ? { formatted: bookingForm.location, lat: custPos[0], lng: custPos[1] } : bookingForm.location,
                             date: bookingForm.date,
                             time: bookingForm.time,
+                            price: finalPrice
                           });
                           const list = await listApiBookings({ email: session.email, limit: 100 });
                           setApiBookings(list);
@@ -945,6 +1011,25 @@ function ClickPicker({ onPick }: { onPick: (latlng: L.LatLng) => void }) {
       onPick(e.latlng);
     },
   });
+  return null;
+}
+
+function CenterOnPos({ pos }: { pos: [number, number] | null }) {
+  const map = useMap();
+  useEffect(() => {
+    // delay invalidateSize slightly to ensure container is fully rendered
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [map]);
+
+  useEffect(() => {
+    if (pos) {
+      map.setView(pos, 13);
+      map.invalidateSize();
+    }
+  }, [pos, map]);
   return null;
 }
 
