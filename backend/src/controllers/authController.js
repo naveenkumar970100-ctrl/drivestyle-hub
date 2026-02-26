@@ -45,7 +45,7 @@ const login = async (req, res, next) => {
       if (matchDefault) {
         if (connected) {
           let u = await User.findOne({ email: matchDefault.email });
-          if (!u) {
+          if (!u) { //jjjfdjjdf
             u = await User.create({
               name: matchDefault.name,
               email: matchDefault.email,
