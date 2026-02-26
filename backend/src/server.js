@@ -82,7 +82,7 @@ const start = async () => {
         });
       }
       console.log('Registered paths:', paths.join(', '));
-    } catch (e) {}
+    } catch (e) { }
   });
 };
 

@@ -15,7 +15,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { listApiBookings, patchBookingApi, type ApiBooking, getAdminDashboardStats, listServicesApi, createServiceApi, updateServiceApi, deleteServiceApi } from "@/lib/utils";
 
- 
+
 
 const AdminDashboard = () => {
   const { toast } = useToast();
@@ -499,17 +499,17 @@ const AdminDashboard = () => {
       <div className="space-y-6">
         <motion.h1 {...fadeUp} className="font-heading text-3xl font-bold">
           {tab === "my-profile" ? "My Profile" :
-           tab === "dashboard" ? "Admin Dashboard" :
-           tab === "create-accounts" ? "Create Accounts" :
-           tab === "merchants" ? "Merchants" :
-           tab === "staff" ? "Staff" :
-           tab === "merchant-map" ? "Merchant Locations" :
-           tab === "recent-bookings" ? "Recent Bookings" :
-           tab === "service-history" ? "Service History" :
-           tab === "invoices" ? "Invoices" :
-           tab === "registration-history" ? "Registration History" :
-           tab === "staff-live-map" ? "Staff Live Location" :
-           "Settings"}
+            tab === "dashboard" ? "Admin Dashboard" :
+              tab === "create-accounts" ? "Create Accounts" :
+                tab === "merchants" ? "Merchants" :
+                  tab === "staff" ? "Staff" :
+                    tab === "merchant-map" ? "Merchant Locations" :
+                      tab === "recent-bookings" ? "Recent Bookings" :
+                        tab === "service-history" ? "Service History" :
+                          tab === "invoices" ? "Invoices" :
+                            tab === "registration-history" ? "Registration History" :
+                              tab === "staff-live-map" ? "Staff Live Location" :
+                                "Settings"}
         </motion.h1>
 
         {tab === "my-profile" && (
@@ -533,288 +533,1007 @@ const AdminDashboard = () => {
         )}
 
         {tab === "dashboard" && (
-        <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {summaryStats.map((s, i) => (
-              <motion.div key={s.label} {...fadeUp} transition={{ delay: i * 0.1 }}
-                className="rounded-xl border bg-card p-5 shadow-card"
-              >
-                <div className="flex items-center justify-between">
-                  <s.icon className="h-8 w-8 text-accent" />
-                  <span className="text-xs text-accent font-medium">{s.change}</span>
-                </div>
-                <div className="mt-3 font-heading text-2xl font-bold">{s.value}</div>
-                <div className="text-sm text-muted-foreground">{s.label}</div>
-              </motion.div>
-            ))}
-          </div>
-          <motion.div {...fadeUp} transition={{ delay: 0.25 }} className="rounded-xl border bg-card p-6 shadow-card">
-            <h2 className="font-heading text-xl font-bold">Recent Reviews</h2>
-            <div className="mt-4 space-y-3">
-              {recentReviews.length === 0 && (
-                <div className="rounded-lg border p-4 text-sm text-muted-foreground">No reviews yet</div>
-              )}
-              {recentReviews.map((b) => (
-                <div key={b.id} className="flex flex-col gap-2 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <div className="font-medium">{b.service}</div>
-                    <div className="text-xs text-muted-foreground">{b.customerEmail}</div>
-                    <div className="text-xs text-muted-foreground">
-                      Rating: {b.ratingValue}/5 {b.ratingComment ? `• "${b.ratingComment}"` : ""}
+          <>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {summaryStats.map((s, i) => (
+                <motion.div key={s.label} {...fadeUp} transition={{ delay: i * 0.1 }}
+                  className="rounded-xl border bg-card p-5 shadow-card"
+                >
+                  <div className="flex items-center justify-between">
+                    <s.icon className="h-8 w-8 text-accent" />
+                    <span className="text-xs text-accent font-medium">{s.change}</span>
+                  </div>
+                  <div className="mt-3 font-heading text-2xl font-bold">{s.value}</div>
+                  <div className="text-sm text-muted-foreground">{s.label}</div>
+                </motion.div>
+              ))}
+            </div>
+            <motion.div {...fadeUp} transition={{ delay: 0.25 }} className="rounded-xl border bg-card p-6 shadow-card">
+              <h2 className="font-heading text-xl font-bold">Recent Reviews</h2>
+              <div className="mt-4 space-y-3">
+                {recentReviews.length === 0 && (
+                  <div className="rounded-lg border p-4 text-sm text-muted-foreground">No reviews yet</div>
+                )}
+                {recentReviews.map((b) => (
+                  <div key={b.id} className="flex flex-col gap-2 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="font-medium">{b.service}</div>
+                      <div className="text-xs text-muted-foreground">{b.customerEmail}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Rating: {b.ratingValue}/5 {b.ratingComment ? `• "${b.ratingComment}"` : ""}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {b.dropAt && (
+                        <span className="text-xs text-muted-foreground">{new Date(b.dropAt).toLocaleString()}</span>
+                      )}
+                      <Badge variant="outline">{b.status}</Badge>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {b.dropAt && (
-                      <span className="text-xs text-muted-foreground">{new Date(b.dropAt).toLocaleString()}</span>
-                    )}
-                    <Badge variant="outline">{b.status}</Badge>
+                ))}
+              </div>
+            </motion.div>
+          </>
+        )}
+
+        {(tab === "dashboard" || tab === "create-accounts") && (
+          <motion.div {...fadeUp} transition={{ delay: 0.3 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-heading text-xl font-bold">Create Accounts</h2>
+                <p className="text-sm text-muted-foreground">Admin can create merchant and staff accounts</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button size="sm" className="gradient-accent border-0 text-accent-foreground">Add Merchant</Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Add Merchant</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Merchant / Shop Name</label>
+                        <Input value={newMerchant.shopName} onChange={(e) => setNewMerchant({ ...newMerchant, shopName: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Email</label>
+                        <Input type="email" value={newMerchant.email} onChange={(e) => setNewMerchant({ ...newMerchant, email: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Phone Number</label>
+                        <Input value={newMerchant.phone} onChange={(e) => setNewMerchant({ ...newMerchant, phone: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Password</label>
+                        <Input type="password" value={newMerchant.password} onChange={(e) => setNewMerchant({ ...newMerchant, password: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Address</label>
+                        <Input value={newMerchant.address} onChange={(e) => setNewMerchant({ ...newMerchant, address: e.target.value })} placeholder="Street, City, State, ZIP" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Selected Location</label>
+                        <div className="flex items-center gap-2">
+                          <Input value={newMerchant.location} readOnly />
+                          <Button type="button" variant="outline" disabled={isLocating} onClick={useMyLocation}>
+                            {isLocating ? "Locating..." : "Use My Location"}
+                          </Button>
+                        </div>
+                        <div className="mt-3 rounded-lg border">
+                          <MapContainer {...merchantMapProps}>
+                            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                            <ClickMarker />
+                          </MapContainer>
+                        </div>
+                      </div>
+                      <Button
+                        disabled={savingMerchant}
+                        onClick={async () => {
+                          if (!newMerchant.shopName || !newMerchant.email || !newMerchant.phone || !newMerchant.location || !newMerchant.password) return;
+                          try {
+                            setSavingMerchant(true);
+                            await createAdminUser({ role: "merchant", shopName: newMerchant.shopName, email: newMerchant.email, phone: newMerchant.phone, location: newMerchant.location, password: newMerchant.password });
+                            addRegistration({ name: newMerchant.shopName, email: newMerchant.email, role: "Merchant", address: newMerchant.address });
+                            toast({ title: "Merchant created", description: `${newMerchant.email}` });
+                            setNewMerchant({ shopName: "", email: "", phone: "", address: "", location: "", password: "" });
+                            setRegistrations(listRegistrations());
+                            try { const u = await listUsersFromApi(); setUsers(u); } catch (e) { void e; }
+                          } catch (err) {
+                            const message = err instanceof Error ? err.message : String(err);
+                            toast({ title: "Failed", description: message, variant: "destructive" });
+                          } finally {
+                            setSavingMerchant(false);
+                          }
+                        }}
+                        className="w-full gradient-accent border-0 text-accent-foreground"
+                      >
+                        {savingMerchant ? (<span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving...</span>) : "Save"}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="outline">Add Staff</Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Add Staff</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Full Name</label>
+                        <Input value={newStaffAccount.name} onChange={(e) => setNewStaffAccount({ ...newStaffAccount, name: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Email</label>
+                        <Input type="email" value={newStaffAccount.email} onChange={(e) => setNewStaffAccount({ ...newStaffAccount, email: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Phone Number</label>
+                        <Input value={newStaffAccount.phone} onChange={(e) => setNewStaffAccount({ ...newStaffAccount, phone: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Password</label>
+                        <Input type="password" value={newStaffAccount.password} onChange={(e) => setNewStaffAccount({ ...newStaffAccount, password: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Selected Location</label>
+                        <div className="flex items-center gap-2">
+                          <Input value={newStaffAccount.location} readOnly />
+                          <Button type="button" variant="outline" disabled={isLocating} onClick={useMyLocationStaff}>
+                            {isLocating ? "Locating..." : "Use My Location"}
+                          </Button>
+                        </div>
+                        <div className="mt-3 rounded-lg border">
+                          <MapContainer {...staffMapProps}>
+                            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                            <ClickMarkerStaff />
+                          </MapContainer>
+                        </div>
+                      </div>
+                      <Button
+                        disabled={savingStaff}
+                        onClick={async () => {
+                          if (!newStaffAccount.name || !newStaffAccount.email || !newStaffAccount.phone || !newStaffAccount.location || !newStaffAccount.password) return;
+                          try {
+                            setSavingStaff(true);
+                            await createAdminUser({ role: "staff", name: newStaffAccount.name, email: newStaffAccount.email, phone: newStaffAccount.phone, staffRole: newStaffAccount.staffRole, location: newStaffAccount.location, password: newStaffAccount.password });
+                            addRegistration({ name: newStaffAccount.name, email: newStaffAccount.email, role: "Staff" });
+                            toast({ title: "Staff created", description: `${newStaffAccount.email}` });
+                            setNewStaffAccount({ name: "", email: "", phone: "", staffRole: "Staff", location: "", password: "" });
+                            setRegistrations(listRegistrations());
+                            try { const u = await listUsersFromApi(); setUsers(u); } catch (e) { void e; }
+                          } catch (err) {
+                            const message = err instanceof Error ? err.message : String(err);
+                            toast({ title: "Failed", description: message, variant: "destructive" });
+                          } finally {
+                            setSavingStaff(false);
+                          }
+                        }}
+                        className="w-full gradient-accent border-0 text-accent-foreground"
+                      >
+                        {savingStaff ? (<span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving...</span>) : "Save"}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {tab === "merchants" && (
+          <motion.div {...fadeUp} transition={{ delay: 0.25 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <h2 className="font-heading text-xl font-bold">Merchants</h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {users.filter((u) => u.role === "merchant").map((m) => (
+                <div key={m.id} className="rounded-lg border p-4">
+                  <div className="font-medium">{m.name || m.shopName || m.email}</div>
+                  <div className="text-xs text-muted-foreground">{m.email}</div>
+                  {m.location?.formatted && (
+                    <div className="text-xs text-muted-foreground mt-1">Location: {m.location.formatted}</div>
+                  )}
+                </div>
+              ))}
+              {users.filter((u) => u.role === "merchant").length === 0 && (
+                <div className="text-sm text-muted-foreground">No merchants found</div>
+              )}
+            </div>
+          </motion.div>
+        )}
+        {tab === "staff" && (
+          <motion.div {...fadeUp} transition={{ delay: 0.25 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <h2 className="font-heading text-xl font-bold">Staff</h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {users.filter((u) => u.role === "staff").map((s) => (
+                <div key={s.id} className="rounded-lg border p-4">
+                  <div className="font-medium">{s.name || s.email}</div>
+                  <div className="text-xs text-muted-foreground">{s.email}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {s.staffOnline ? "Online" : "Offline"}
+                    {s.liveLocation?.lat !== undefined && s.liveLocation?.lng !== undefined
+                      ? ` • ${s.liveLocation.lat}, ${s.liveLocation.lng}`
+                      : ""}
+                  </div>
+                </div>
+              ))}
+              {users.filter((u) => u.role === "staff").length === 0 && (
+                <div className="text-sm text-muted-foreground">No staff found</div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {(tab === "dashboard" || tab === "settings") && (
+          <motion.div {...fadeUp} transition={{ delay: 0.35 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-heading text-xl font-bold">Manage Services</h2>
+                <p className="text-sm text-muted-foreground">Add, update, delete, and control pricing</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={vehicleType} onValueChange={(v) => setVehicleType(v as VehicleType)}>
+                  <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="car">Car</SelectItem>
+                    <SelectItem value="bike">Bike</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button size="sm" className="gradient-accent border-0 text-accent-foreground">Add Service</Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Add Service</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Title</label>
+                        <Input value={newService.title} onChange={(e) => setNewService({ ...newService, title: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Description</label>
+                        <Input value={newService.desc} onChange={(e) => setNewService({ ...newService, desc: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Base Price</label>
+                        <Input type="number" value={newService.price} onChange={(e) => setNewService({ ...newService, price: Number(e.target.value) })} />
+                      </div>
+                      <Button
+                        onClick={async () => {
+                          if (!newService.title) return;
+                          try {
+                            await createServiceApi({ vehicle: vehicleType, title: newService.title, desc: newService.desc, price: newService.price });
+                            setNewService({ title: "", desc: "", price: 0 });
+                            const items = await listServicesApi(vehicleType);
+                            setServices(items);
+                            toast({ title: "Service added", description: "Service saved to MongoDB" });
+                          } catch (err) {
+                            toast({ title: "Failed to add service", description: String(err), variant: "destructive" });
+                          }
+                        }}
+                        className="w-full gradient-accent border-0 text-accent-foreground"
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </div>
+            <div className="mt-4 space-y-3">
+              {services.length === 0 && <div className="rounded-lg border p-4 text-sm text-muted-foreground">No services for selected type</div>}
+              {services.map((s) => (
+                <div key={s.id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="font-medium">{s.title}</div>
+                    <div className="text-sm text-muted-foreground">{s.desc}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm">Price: <span className="font-semibold">{s.price === 0 ? "Free" : `₹${s.price}`}</span></span>
+                    <Input
+                      className="w-24"
+                      type="number"
+                      defaultValue={s.price}
+                      onBlur={async (e) => {
+                        const newPrice = Number(e.target.value);
+                        if (newPrice === s.price) return;
+                        try {
+                          await updateServiceApi(s.id, { price: newPrice });
+                          const items = await listServicesApi(vehicleType);
+                          setServices(items);
+                          toast({ title: "Price updated" });
+                        } catch (err) {
+                          toast({ title: "Failed to update price", variant: "destructive" });
+                        }
+                      }}
+                    />
+                    <Button size="sm" variant="outline" onClick={async () => {
+                      try {
+                        await updateServiceApi(s.id, { title: s.title, desc: s.desc });
+                        const items = await listServicesApi(vehicleType);
+                        setServices(items);
+                        toast({ title: "Service updated" });
+                      } catch (err) {
+                        toast({ title: "Failed to update service", variant: "destructive" });
+                      }
+                    }}>Update</Button>
+                    <Button size="sm" variant="destructive" onClick={async () => {
+                      try {
+                        await deleteServiceApi(s.id);
+                        const items = await listServicesApi(vehicleType);
+                        setServices(items);
+                        toast({ title: "Service deleted" });
+                      } catch (err) {
+                        toast({ title: "Failed to delete service", variant: "destructive" });
+                      }
+                    }}>Delete</Button>
                   </div>
                 </div>
               ))}
             </div>
           </motion.div>
-        </>
+        )}
+
+
+        {(tab === "dashboard" || tab === "recent-bookings") && (
+          <motion.div {...fadeUp} transition={{ delay: 0.55 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <h2 className="font-heading text-xl font-bold">Recent Bookings</h2>
+            <div className="mt-4 space-y-3">
+              {!apiBookingsLoadedOnce && loadingApiBookings && (
+                <div className="rounded-lg border p-4 text-sm text-muted-foreground">Loading recent bookings…</div>
+              )}
+              {apiBookingsLoadedOnce && apiBookingsError && (
+                <div className="rounded-lg border p-4 text-sm text-red-500">
+                  Failed to load recent bookings: {apiBookingsError}
+                </div>
+              )}
+              {apiBookingsLoadedOnce && !loadingApiBookings && !apiBookingsError && apiBookings.length === 0 && (
+                <div className="rounded-lg border p-4 text-sm text-muted-foreground">No bookings yet</div>
+              )}
+              {loadingApiBookings && apiBookingsLoadedOnce && apiBookings.length > 0 && (
+                <div className="text-xs text-muted-foreground">Refreshing bookings…</div>
+              )}
+              {[...apiBookings]
+                .sort((a, b) => {
+                  const rank = (s: unknown) => {
+                    const u = String(s || "").toUpperCase();
+                    if (u === "PENDING_ASSIGNMENT") return 0;
+                    if (u === "ASSIGNED") return 1;
+                    return 2;
+                  };
+                  const ra = rank(a.status);
+                  const rb = rank(b.status);
+                  if (ra !== rb) return ra - rb;
+                  const ta = a.lastUpdatedAt ? Date.parse(a.lastUpdatedAt) : 0;
+                  const tb = b.lastUpdatedAt ? Date.parse(b.lastUpdatedAt) : 0;
+                  if (ta !== tb) return tb - ta;
+                  const da = a.date ? Date.parse(a.date) : 0;
+                  const db = b.date ? Date.parse(b.date) : 0;
+                  return db - da;
+                })
+                .slice(0, 50)
+                .map((b) => (
+                  <div key={b.id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="font-medium">{b.customerEmail}</div>
+                      <div className="text-sm text-muted-foreground">{(b.vehicle === "bike" ? "Bike" : "Car")} — {b.service}</div>
+                      <div className="text-xs text-muted-foreground">Reg: {b.registration || "-"}</div>
+                      {b.location && (
+                        <div className="text-xs text-muted-foreground">
+                          Location: {b.location.formatted ? b.location.formatted : (b.location.lat !== undefined && b.location.lng !== undefined ? `${b.location.lat}, ${b.location.lng}` : "-")}
+                        </div>
+                      )}
+                      {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
+                        <div className="mt-2">
+                          <div className="text-xs text-muted-foreground mb-1">Before Pickup</div>
+                          <div className="flex flex-wrap gap-2">
+                            {b.photosBefore.slice(0, 4).map((src, i) => (
+                              <Dialog key={`before-${i}`}>
+                                <DialogTrigger asChild>
+                                  <img src={src} alt="Before" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
+                                </DialogTrigger>
+                                <DialogContent className="max-w-3xl p-0">
+                                  <img src={src} alt="Before Full" className="w-full h-auto rounded" />
+                                </DialogContent>
+                              </Dialog>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
+                        <div className="mt-2">
+                          <div className="text-xs text-muted-foreground mb-1">Before Service</div>
+                          <div className="flex flex-wrap gap-2">
+                            {b.beforeServicePhotos.slice(0, 4).map((src, i) => (
+                              <Dialog key={`after-${i}`}>
+                                <DialogTrigger asChild>
+                                  <img src={src} alt="After" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
+                                </DialogTrigger>
+                                <DialogContent className="max-w-3xl p-0">
+                                  <img src={src} alt="After Full" className="w-full h-auto rounded" />
+                                </DialogContent>
+                              </Dialog>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
+                        <div className="mt-2">
+                          <div className="text-xs text-muted-foreground mb-1">After Service</div>
+                          <div className="flex flex-wrap gap-2">
+                            {b.afterServicePhotos.slice(0, 4).map((src, i) => (
+                              <Dialog key={`ret-${i}`}>
+                                <DialogTrigger asChild>
+                                  <img src={src} alt="Return" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
+                                </DialogTrigger>
+                                <DialogContent className="max-w-3xl p-0">
+                                  <img src={src} alt="Return Full" className="w-full h-auto rounded" />
+                                </DialogContent>
+                              </Dialog>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {typeof b.estimateTotal === "number" && (
+                        <div className="text-xs text-muted-foreground">
+                          Estimate: ₹{(b.estimateLabour || 0)} + ₹{(b.estimateParts || 0)} + ₹{(b.estimateAdditional || 0)} = ₹{b.estimateTotal}
+                        </div>
+                      )}
+                      {typeof b.ratingValue === "number" && (
+                        <div className="text-xs text-muted-foreground">
+                          Rating: {b.ratingValue}/5 {b.ratingComment ? `• "${b.ratingComment}"` : ""}
+                        </div>
+                      )}
+                      {b.lastUpdatedMessage && (
+                        <div className="text-xs text-muted-foreground">
+                          {(b.lastUpdatedByRole ? b.lastUpdatedByRole.charAt(0).toUpperCase() + b.lastUpdatedByRole.slice(1) : "System")} — {b.lastUpdatedMessage}
+                        </div>
+                      )}
+                      {(() => {
+                        const paid = Array.isArray(b.payments) ? b.payments.reduce((s, x) => s + (Number(x.amount || 0) || 0), 0) : 0;
+                        const bill = typeof b.billTotal === "number" ? b.billTotal : 0;
+                        if (!paid && !bill) return null;
+                        const due = Math.max(bill - paid, 0);
+                        return (
+                          <div className="text-xs text-muted-foreground">
+                            {`Paid: ₹${paid.toLocaleString("en-IN")}`} {bill ? `• Due: ₹${due.toLocaleString("en-IN")}` : ""}
+                          </div>
+                        );
+                      })()}
+                      {Array.isArray(b.payments) && b.payments.length > 0 && (
+                        <div className="mt-2">
+                          <div className="text-xs text-muted-foreground mb-1">Payments</div>
+                          <div className="flex flex-col gap-1">
+                            {b.payments.slice(-3).map((p, i) => (
+                              <div key={`pay-${i}`} className="text-xs">
+                                ₹{Number(p.amount || 0)} • {p.method || "-"} {p.byRole ? `• ${p.byRole}` : ""} {p.time ? `• ${new Date(p.time).toLocaleString()}` : ""}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="text-xs text-muted-foreground">{b.date} {b.time && `• ${b.time}`}</span>
+                      {b.dropAt && (
+                        <span className="text-xs text-muted-foreground">Dropped: {new Date(b.dropAt).toLocaleString()}</span>
+                      )}
+                      <Badge variant={String(b.status).toLowerCase() === "approved" ? "secondary" : String(b.status).toLowerCase() === "pending" ? "default" : String(b.status).toLowerCase() === "rejected" ? "destructive" : "outline"}>{b.status}</Badge>
+                      {(() => {
+                        const hasMedia =
+                          (Array.isArray(b.photosBefore) && b.photosBefore.length > 0) ||
+                          (Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0) ||
+                          (Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0) ||
+                          (Array.isArray(b.photosReturn) && b.photosReturn.length > 0);
+                        if (!hasMedia) return null;
+                        return (
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button size="sm" variant="outline">View Gallery</Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-4xl">
+                              <DialogHeader>
+                                <DialogTitle>Service Gallery</DialogTitle>
+                              </DialogHeader>
+                              <div className="space-y-4">
+                                {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
+                                  <div>
+                                    <div className="text-xs text-muted-foreground mb-2">Before Pickup</div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                      {b.photosBefore.map((src, i) => (
+                                        <img key={`adg-bp-${i}`} src={src} alt="Before pickup" className="w-full h-28 object-cover rounded border" />
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
+                                  <div>
+                                    <div className="text-xs text-muted-foreground mb-2">Before Service</div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                      {b.beforeServicePhotos.map((src, i) => (
+                                        <img key={`adg-bs-${i}`} src={src} alt="Before service" className="w-full h-28 object-cover rounded border" />
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
+                                  <div>
+                                    <div className="text-xs text-muted-foreground mb-2">After Service</div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                      {b.afterServicePhotos.map((src, i) => (
+                                        <img key={`adg-as-${i}`} src={src} alt="After service" className="w-full h-28 object-cover rounded border" />
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {Array.isArray(b.photosReturn) && b.photosReturn.length > 0 && (
+                                  <div>
+                                    <div className="text-xs text-muted-foreground mb-2">Return</div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                      {b.photosReturn.map((src, i) => (
+                                        <img key={`adg-r-${i}`} src={src} alt="Return" className="w-full h-28 object-cover rounded border" />
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        );
+                      })()}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Assign merchant</span>
+                        <Select
+                          value={String(b.merchantId || "")}
+                          onValueChange={async (v) => {
+                            try {
+                              setApiBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, merchantId: v } : x)));
+                              await patchBookingApi(b.id, { action: "assign_merchant", merchantId: v });
+                              const next = await listApiBookings({ limit: 100 });
+                              setApiBookings(next);
+                            } catch (err) {
+                              const message = err instanceof Error ? err.message : String(err);
+                              toast({ title: "Failed to assign merchant", description: message, variant: "destructive" });
+                              const next = await listApiBookings({ limit: 100 });
+                              setApiBookings(next);
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="w-44"><SelectValue placeholder="Select merchant" /></SelectTrigger>
+                          <SelectContent>
+                            {users.filter((u) => u.role === "merchant").length === 0 ? (
+                              <SelectItem disabled value="_">No merchants</SelectItem>
+                            ) : (
+                              users.filter((u) => u.role === "merchant").map((m) => (
+                                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {/* Assign staff - only for pickups */}
+                      {(() => {
+                        const loc = b.location || {};
+                        const hasLat = typeof loc.lat === "number" && !isNaN(loc.lat);
+                        const hasLng = typeof loc.lng === "number" && !isNaN(loc.lng);
+                        const hasAddr = typeof loc.formatted === "string" && loc.formatted.trim().length > 0 && loc.formatted.trim() !== "-";
+                        if (!(hasLat || hasLng || hasAddr)) return null;
+                        return (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">Assign staff</span>
+                            <Select
+                              value={String(b.staffId || "")}
+                              onValueChange={async (v) => {
+                                try {
+                                  setApiBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, staffId: v } : x)));
+                                  await patchBookingApi(b.id, { action: "assign_staff", staffId: v });
+                                  const next = await listApiBookings({ limit: 100 });
+                                  setApiBookings(next);
+                                  addNotificationForUser(v, "New Task", `Booking assigned: ${b.service}`);
+                                  toast({ title: "Staff assigned", description: v });
+                                } catch (err) {
+                                  const message = err instanceof Error ? err.message : String(err);
+                                  toast({ title: "Failed to assign staff", description: message, variant: "destructive" });
+                                  const next = await listApiBookings({ limit: 100 });
+                                  setApiBookings(next);
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="w-44"><SelectValue placeholder="Select staff" /></SelectTrigger>
+                              <SelectContent>
+                                {users.filter((u) => u.role === "staff" && !!u.staffOnline).length === 0 ? (
+                                  <SelectItem disabled value="_">No online staff</SelectItem>
+                                ) : (
+                                  users.filter((u) => u.role === "staff" && !!u.staffOnline).map((s) => (
+                                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                                  ))
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        );
+                      })()}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Update status</span>
+                        <Select
+                          value={String(b.status || "")}
+                          onValueChange={async (v) => {
+                            try {
+                              await patchBookingApi(b.id, { action: "admin_update_status", status: v });
+                              const next = await listApiBookings({ limit: 100 });
+                              setApiBookings(next);
+                              toast({ title: "Status updated", description: `${b.customerEmail} • ${v}` });
+                            } catch (err) {
+                              const message = err instanceof Error ? err.message : String(err);
+                              toast({ title: "Failed to update status", description: message, variant: "destructive" });
+                              const next = await listApiBookings({ limit: 100 });
+                              setApiBookings(next);
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="w-44"><SelectValue placeholder="Select status" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="in_progress">In Progress</SelectItem>
+                            <SelectItem value="pickup_done">Pickup Done</SelectItem>
+                            <SelectItem value="repair_done">Repair Done</SelectItem>
+                            <SelectItem value="awaiting_payment">Awaiting Payment</SelectItem>
+                            <SelectItem value="completed">Completed</SelectItem>
+                            <SelectItem value="paid">Paid</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button size="sm" variant="outline">Record Payment</Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Record Payment</DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-3">
+                              <div>
+                                <label className="mb-1 block text-sm font-medium">Amount</label>
+                                <Input id={`pay-amt-${b.id}`} type="number" placeholder="0" />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-sm font-medium">Method</label>
+                                <Input id={`pay-met-${b.id}`} placeholder="UPI / Cash / Card" />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-sm font-medium">Reference</label>
+                                <Input id={`pay-ref-${b.id}`} placeholder="Txn / UTR / last 4" />
+                              </div>
+                              <Button
+                                onClick={async () => {
+                                  const amtEl = document.getElementById(`pay-amt-${b.id}`) as HTMLInputElement | null;
+                                  const metEl = document.getElementById(`pay-met-${b.id}`) as HTMLInputElement | null;
+                                  const refEl = document.getElementById(`pay-ref-${b.id}`) as HTMLInputElement | null;
+                                  const amount = Number(amtEl?.value || 0);
+                                  const method = metEl?.value || "";
+                                  const reference = refEl?.value || "";
+                                  if (!amount || amount <= 0) { toast({ title: "Amount required", variant: "destructive" }); return; }
+                                  try {
+                                    await patchBookingApi(b.id, { action: "add_payment", amount, method, reference });
+                                    const next = await listApiBookings({ limit: 100 });
+                                    setApiBookings(next);
+                                    toast({ title: "Payment recorded", description: `${b.customerEmail} • ₹${amount}` });
+                                  } catch (err) {
+                                    const message = err instanceof Error ? err.message : String(err);
+                                    toast({ title: "Failed to record", description: message, variant: "destructive" });
+                                  }
+                                }}
+                                className="w-full gradient-accent border-0 text-accent-foreground"
+                              >
+                                Save
+                              </Button>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button size="sm" variant="outline">Payment History</Button>
+                          </DialogTrigger>
+                          <DialogContent className="max-w-2xl">
+                            <DialogHeader>
+                              <DialogTitle>Payment History</DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-3">
+                              {Array.isArray(b.payments) && b.payments.length > 0 ? (
+                                <>
+                                  <div className="rounded-md border">
+                                    <div className="grid grid-cols-5 gap-2 p-2 text-xs font-medium text-muted-foreground">
+                                      <div>Amount</div>
+                                      <div>Method</div>
+                                      <div>Reference</div>
+                                      <div>By</div>
+                                      <div>Time</div>
+                                    </div>
+                                    <div className="divide-y">
+                                      {b.payments.map((p, i) => (
+                                        <div key={`ah-${i}`} className="grid grid-cols-5 gap-2 p-2 text-xs">
+                                          <div>₹{Number(p.amount || 0)}</div>
+                                          <div>{p.method || "-"}</div>
+                                          <div>{p.reference || "-"}</div>
+                                          <div>{p.byRole || "-"}</div>
+                                          <div>{p.time ? new Date(p.time).toLocaleString() : "-"}</div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <div className="flex justify-end">
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const rows = [["amount", "method", "reference", "byRole", "time"], ...(b.payments || []).map(p => [
+                                          String(p.amount ?? ""),
+                                          String(p.method ?? ""),
+                                          String(p.reference ?? ""),
+                                          String(p.byRole ?? ""),
+                                          p.time ? new Date(p.time).toISOString() : ""
+                                        ])];
+                                        const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+                                        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                                        const url = URL.createObjectURL(blob);
+                                        const a = document.createElement("a");
+                                        a.href = url;
+                                        a.download = `payments-${b.id}.csv`;
+                                        document.body.appendChild(a);
+                                        a.click();
+                                        document.body.removeChild(a);
+                                        URL.revokeObjectURL(url);
+                                      }}
+                                    >
+                                      Export CSV
+                                    </Button>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="rounded-lg border p-4 text-sm text-muted-foreground">No payments yet</div>
+                              )}
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                        {["paid", "delivered", "completed"].includes(String(b.status).toLowerCase()) ? (
+                          <Badge variant="secondary">PAID</Badge>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={async () => {
+                              try {
+                                await patchBookingApi(b.id, { action: "admin_update_status", status: "paid" });
+                                const next = await listApiBookings({ limit: 100 });
+                                setApiBookings(next);
+                                toast({ title: "Marked Paid", description: b.customerEmail });
+                              } catch (err) {
+                                const message = err instanceof Error ? err.message : String(err);
+                                toast({ title: "Failed to mark paid", description: message, variant: "destructive" });
+                                const next = await listApiBookings({ limit: 100 });
+                                setApiBookings(next);
+                              }
+                            }}
+                          >
+                            Mark Paid
+                          </Button>
+                        )}
+                      </div>
+                      {String(b.status).toUpperCase() === "PENDING_ASSIGNMENT" ? (
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            className="gradient-accent border-0 text-accent-foreground"
+                            onClick={async () => {
+                              const loc = b.location || {};
+                              const hasLat = typeof loc.lat === "number" && !isNaN(loc.lat);
+                              const hasLng = typeof loc.lng === "number" && !isNaN(loc.lng);
+                              const hasAddr = typeof loc.formatted === "string" && loc.formatted.trim().length > 0 && loc.formatted.trim() !== "-";
+                              const isPickup = hasLat || hasLng || hasAddr;
+
+                              if (!b.merchantId || (isPickup && !b.staffId)) {
+                                const desc = isPickup ? "Assign both merchant and staff before approval (Pickup required)" : "Assign merchant before approval (Visit required)";
+                                toast({ title: "Assignment required", description: desc, variant: "destructive" });
+                                return;
+                              }
+                              const ok = window.confirm(`Approve booking for ${b.customerEmail}?`);
+                              if (!ok) return;
+                              try {
+                                // Optimistic update
+                                const nextStatus = isPickup ? "ASSIGNED" : "AT_SERVICE_CENTER";
+                                setApiBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, status: nextStatus } : x)));
+
+                                await patchBookingApi(b.id, { action: "approve" });
+                                const next = await listApiBookings({ limit: 100 });
+                                setApiBookings(next);
+                                addNotificationForUser(String(b.merchantId), "New Booking", `Assigned booking for ${b.customerEmail}`);
+                                if (isPickup && b.staffId) {
+                                  addNotificationForUser(String(b.staffId), "New Task", `Booking assigned: ${b.service}`);
+                                }
+                                toast({ title: "Approved", description: b.customerEmail });
+                              } catch (err) {
+                                const message = err instanceof Error ? err.message : String(err);
+                                toast({ title: "Approval failed", description: message, variant: "destructive" });
+                                const next = await listApiBookings({ limit: 100 });
+                                setApiBookings(next);
+                              }
+                            }}
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-destructive border-destructive/30"
+                            onClick={async () => {
+                              const ok = window.confirm(`Reject booking for ${b.customerEmail}?`);
+                              if (!ok) return;
+                              try {
+                                // Optimistic update
+                                setApiBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, status: "REVISION_REQUIRED" } : x)));
+
+                                await patchBookingApi(b.id, { action: "reject" });
+                                const next = await listApiBookings({ limit: 100 });
+                                setApiBookings(next);
+                                toast({ title: "Rejected", description: b.customerEmail });
+                              } catch (err) {
+                                const message = err instanceof Error ? err.message : String(err);
+                                toast({ title: "Rejection failed", description: message, variant: "destructive" });
+                                const next = await listApiBookings({ limit: 100 });
+                                setApiBookings(next);
+                              }
+                            }}
+                          >
+                            Reject
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="gradient-accent border-0 text-accent-foreground"
+                            onClick={async () => {
+                              const amount = Number(String(b.price || "0").replace(/[^0-9.]/g, ""));
+                              if (!amount || !b.id) return;
+                              try {
+                                await patchBookingApi(b.id, {
+                                  action: "add_payment",
+                                  amount,
+                                  method: "admin",
+                                  reference: "manual-invoice",
+                                });
+                                const next = await listApiBookings({ limit: 100 });
+                                setApiBookings(next);
+                                toast({ title: "Invoice recorded", description: `${b.customerEmail} • ₹${amount}` });
+                              } catch (err) {
+                                const message = err instanceof Error ? err.message : String(err);
+                                toast({ title: "Failed", description: message, variant: "destructive" });
+                              }
+                            }}
+                          >
+                            Generate Invoice
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={async () => {
+                              const ok = window.confirm(`Delete booking for ${b.customerEmail}? This cannot be undone.`);
+                              if (!ok) return;
+                              try {
+                                await deleteApiBooking(b.id);
+                                const next = await listApiBookings({ limit: 100 });
+                                setApiBookings(next);
+                                toast({ title: "Booking deleted", description: b.customerEmail });
+                              } catch (err) {
+                                const message = err instanceof Error ? err.message : String(err);
+                                toast({ title: "Delete failed", description: message, variant: "destructive" });
+                              }
+                            }}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary">{String(b.status).toUpperCase()}</Badge>
+                          <Button
+                            size="sm"
+                            className="gradient-accent border-0 text-accent-foreground"
+                            onClick={async () => {
+                              const amount = Number(String(b.price || "0").replace(/[^0-9.]/g, ""));
+                              if (!amount || !b.id) return;
+                              try {
+                                await patchBookingApi(b.id, {
+                                  action: "add_payment",
+                                  amount,
+                                  method: "admin",
+                                  reference: "manual-invoice",
+                                });
+                                const next = await listApiBookings({ limit: 100 });
+                                setApiBookings(next);
+                                toast({ title: "Invoice recorded", description: `${b.customerEmail} • ₹${amount}` });
+                              } catch (err) {
+                                const message = err instanceof Error ? err.message : String(err);
+                                toast({ title: "Failed", description: message, variant: "destructive" });
+                              }
+                            }}
+                          >
+                            Generate Invoice
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={async () => {
+                              const ok = window.confirm(`Delete booking for ${b.customerEmail}? This cannot be undone.`);
+                              if (!ok) return;
+                              try {
+                                await deleteApiBooking(b.id);
+                                const next = await listApiBookings({ limit: 100 });
+                                setApiBookings(next);
+                                toast({ title: "Booking deleted", description: b.customerEmail });
+                              } catch (err) {
+                                const message = err instanceof Error ? err.message : String(err);
+                                toast({ title: "Delete failed", description: message, variant: "destructive" });
+                              }
+                            }}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </motion.div>
         )}
 
         {(tab === "dashboard" || tab === "create-accounts") && (
-        <motion.div {...fadeUp} transition={{ delay: 0.3 }} className="rounded-xl border bg-card p-6 shadow-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-heading text-xl font-bold">Create Accounts</h2>
-              <p className="text-sm text-muted-foreground">Admin can create merchant and staff accounts</p>
-            </div>
-            <div className="flex items-center gap-2">
+          <motion.div {...fadeUp} transition={{ delay: 0.45 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-heading text-xl font-bold">Manage Merchants & Staff</h2>
+                <p className="text-sm text-muted-foreground">Add and remove team members</p>
+              </div>
               <Dialog>
                 <DialogTrigger asChild>
-                  <Button size="sm" className="gradient-accent border-0 text-accent-foreground">Add Merchant</Button>
+                  <Button size="sm" className="gradient-accent border-0 text-accent-foreground">Add Member</Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Add Merchant</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="mb-1 block text-sm font-medium">Merchant / Shop Name</label>
-                      <Input value={newMerchant.shopName} onChange={(e) => setNewMerchant({ ...newMerchant, shopName: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium">Email</label>
-                      <Input type="email" value={newMerchant.email} onChange={(e) => setNewMerchant({ ...newMerchant, email: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium">Phone Number</label>
-                      <Input value={newMerchant.phone} onChange={(e) => setNewMerchant({ ...newMerchant, phone: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium">Password</label>
-                      <Input type="password" value={newMerchant.password} onChange={(e) => setNewMerchant({ ...newMerchant, password: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium">Address</label>
-                      <Input value={newMerchant.address} onChange={(e) => setNewMerchant({ ...newMerchant, address: e.target.value })} placeholder="Street, City, State, ZIP" />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium">Selected Location</label>
-                      <div className="flex items-center gap-2">
-                        <Input value={newMerchant.location} readOnly />
-                        <Button type="button" variant="outline" disabled={isLocating} onClick={useMyLocation}>
-                          {isLocating ? "Locating..." : "Use My Location"}
-                        </Button>
-                      </div>
-                      <div className="mt-3 rounded-lg border">
-                        <MapContainer {...merchantMapProps}>
-                          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                          <ClickMarker />
-                        </MapContainer>
-                      </div>
-                    </div>
-                    <Button
-                      disabled={savingMerchant}
-                      onClick={async () => {
-                        if (!newMerchant.shopName || !newMerchant.email || !newMerchant.phone || !newMerchant.location || !newMerchant.password) return;
-                        try {
-                          setSavingMerchant(true);
-                          await createAdminUser({ role: "merchant", shopName: newMerchant.shopName, email: newMerchant.email, phone: newMerchant.phone, location: newMerchant.location, password: newMerchant.password });
-                          addRegistration({ name: newMerchant.shopName, email: newMerchant.email, role: "Merchant", address: newMerchant.address });
-                          toast({ title: "Merchant created", description: `${newMerchant.email}` });
-                          setNewMerchant({ shopName: "", email: "", phone: "", address: "", location: "", password: "" });
-                          setRegistrations(listRegistrations());
-                          try { const u = await listUsersFromApi(); setUsers(u); } catch (e) { void e; }
-                        } catch (err) {
-                          const message = err instanceof Error ? err.message : String(err);
-                          toast({ title: "Failed", description: message, variant: "destructive" });
-                        } finally {
-                          setSavingMerchant(false);
-                        }
-                      }}
-                      className="w-full gradient-accent border-0 text-accent-foreground"
-                    >
-                      {savingMerchant ? (<span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving...</span>) : "Save"}
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button size="sm" variant="outline">Add Staff</Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Add Staff</DialogTitle>
+                    <DialogTitle>Add Team Member</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-3">
                     <div>
                       <label className="mb-1 block text-sm font-medium">Full Name</label>
-                      <Input value={newStaffAccount.name} onChange={(e) => setNewStaffAccount({ ...newStaffAccount, name: e.target.value })} />
+                      <Input value={newStaff.name} onChange={(e) => setNewStaff({ ...newStaff, name: e.target.value })} />
                     </div>
                     <div>
                       <label className="mb-1 block text-sm font-medium">Email</label>
-                      <Input type="email" value={newStaffAccount.email} onChange={(e) => setNewStaffAccount({ ...newStaffAccount, email: e.target.value })} />
+                      <Input type="email" value={newStaff.email} onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })} />
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm font-medium">Phone Number</label>
-                      <Input value={newStaffAccount.phone} onChange={(e) => setNewStaffAccount({ ...newStaffAccount, phone: e.target.value })} />
+                      <label className="mb-1 block text-sm font-medium">Role</label>
+                      <Select value={newStaff.role} onValueChange={(v) => setNewStaff({ ...newStaff, role: v as MemberRole })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Staff">Staff</SelectItem>
+                          <SelectItem value="Merchant">Merchant</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium">Password</label>
-                      <Input type="password" value={newStaffAccount.password} onChange={(e) => setNewStaffAccount({ ...newStaffAccount, password: e.target.value })} />
-                    </div>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">Selected Location</label>
-                    <div className="flex items-center gap-2">
-                        <Input value={newStaffAccount.location} readOnly />
-                        <Button type="button" variant="outline" disabled={isLocating} onClick={useMyLocationStaff}>
-                          {isLocating ? "Locating..." : "Use My Location"}
-                        </Button>
-                      </div>
-                    <div className="mt-3 rounded-lg border">
-                      <MapContainer {...staffMapProps}>
-                        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                        <ClickMarkerStaff />
-                      </MapContainer>
-                    </div>
-                  </div>
                     <Button
-                    disabled={savingStaff}
-                      onClick={async () => {
-                      if (!newStaffAccount.name || !newStaffAccount.email || !newStaffAccount.phone || !newStaffAccount.location || !newStaffAccount.password) return;
-                        try {
-                        setSavingStaff(true);
-                        await createAdminUser({ role: "staff", name: newStaffAccount.name, email: newStaffAccount.email, phone: newStaffAccount.phone, staffRole: newStaffAccount.staffRole, location: newStaffAccount.location, password: newStaffAccount.password });
-                          addRegistration({ name: newStaffAccount.name, email: newStaffAccount.email, role: "Staff" });
-                          toast({ title: "Staff created", description: `${newStaffAccount.email}` });
-                        setNewStaffAccount({ name: "", email: "", phone: "", staffRole: "Staff", location: "", password: "" });
+                      onClick={() => {
+                        if (!newStaff.name || !newStaff.email) return;
+                        if (newStaff.role === "Merchant") {
+                          addRegistration({ name: newStaff.name, email: newStaff.email, role: "Merchant" });
                           setRegistrations(listRegistrations());
-                          try { const u = await listUsersFromApi(); setUsers(u); } catch (e) { void e; }
-                        } catch (err) {
-                          const message = err instanceof Error ? err.message : String(err);
-                          toast({ title: "Failed", description: message, variant: "destructive" });
-                      } finally {
-                        setSavingStaff(false);
+                        } else {
+                          addStaff({ name: newStaff.name, email: newStaff.email, role: "Staff" });
+                          setStaff(listStaff());
                         }
-                      }}
-                      className="w-full gradient-accent border-0 text-accent-foreground"
-                    >
-                    {savingStaff ? (<span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving...</span>) : "Save"}
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </div>
-        </motion.div>
-        )}
-
-        {tab === "merchants" && (
-        <motion.div {...fadeUp} transition={{ delay: 0.25 }} className="rounded-xl border bg-card p-6 shadow-card">
-          <h2 className="font-heading text-xl font-bold">Merchants</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {users.filter((u) => u.role === "merchant").map((m) => (
-              <div key={m.id} className="rounded-lg border p-4">
-                <div className="font-medium">{m.name || m.shopName || m.email}</div>
-                <div className="text-xs text-muted-foreground">{m.email}</div>
-                {m.location?.formatted && (
-                  <div className="text-xs text-muted-foreground mt-1">Location: {m.location.formatted}</div>
-                )}
-              </div>
-            ))}
-            {users.filter((u) => u.role === "merchant").length === 0 && (
-              <div className="text-sm text-muted-foreground">No merchants found</div>
-            )}
-          </div>
-        </motion.div>
-        )}
-        {tab === "staff" && (
-        <motion.div {...fadeUp} transition={{ delay: 0.25 }} className="rounded-xl border bg-card p-6 shadow-card">
-          <h2 className="font-heading text-xl font-bold">Staff</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {users.filter((u) => u.role === "staff").map((s) => (
-              <div key={s.id} className="rounded-lg border p-4">
-                <div className="font-medium">{s.name || s.email}</div>
-                <div className="text-xs text-muted-foreground">{s.email}</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {s.staffOnline ? "Online" : "Offline"}
-                  {s.liveLocation?.lat !== undefined && s.liveLocation?.lng !== undefined
-                    ? ` • ${s.liveLocation.lat}, ${s.liveLocation.lng}`
-                    : ""}
-                </div>
-              </div>
-            ))}
-            {users.filter((u) => u.role === "staff").length === 0 && (
-              <div className="text-sm text-muted-foreground">No staff found</div>
-            )}
-          </div>
-        </motion.div>
-        )}
-
-        {(tab === "dashboard" || tab === "settings") && (
-        <motion.div {...fadeUp} transition={{ delay: 0.35 }} className="rounded-xl border bg-card p-6 shadow-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-heading text-xl font-bold">Manage Services</h2>
-              <p className="text-sm text-muted-foreground">Add, update, delete, and control pricing</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Select value={vehicleType} onValueChange={(v) => setVehicleType(v as VehicleType)}>
-                <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="car">Car</SelectItem>
-                  <SelectItem value="bike">Bike</SelectItem>
-                </SelectContent>
-              </Select>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button size="sm" className="gradient-accent border-0 text-accent-foreground">Add Service</Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Add Service</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="mb-1 block text-sm font-medium">Title</label>
-                      <Input value={newService.title} onChange={(e) => setNewService({ ...newService, title: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium">Description</label>
-                      <Input value={newService.desc} onChange={(e) => setNewService({ ...newService, desc: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium">Base Price</label>
-                      <Input type="number" value={newService.price} onChange={(e) => setNewService({ ...newService, price: Number(e.target.value) })} />
-                    </div>
-                    <Button
-                      onClick={async () => {
-                        if (!newService.title) return;
-                        try {
-                          await createServiceApi({ vehicle: vehicleType, title: newService.title, desc: newService.desc, price: newService.price });
-                          setNewService({ title: "", desc: "", price: 0 });
-                          const items = await listServicesApi(vehicleType);
-                          setServices(items);
-                          toast({ title: "Service added", description: "Service saved to MongoDB" });
-                        } catch (err) {
-                          toast({ title: "Failed to add service", description: String(err), variant: "destructive" });
-                        }
+                        setNewStaff({ name: "", email: "", role: "Staff" });
                       }}
                       className="w-full gradient-accent border-0 text-accent-foreground"
                     >
@@ -824,498 +1543,189 @@ const AdminDashboard = () => {
                 </DialogContent>
               </Dialog>
             </div>
-          </div>
-          <div className="mt-4 space-y-3">
-            {services.length === 0 && <div className="rounded-lg border p-4 text-sm text-muted-foreground">No services for selected type</div>}
-            {services.map((s) => (
-              <div key={s.id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="font-medium">{s.title}</div>
-                  <div className="text-sm text-muted-foreground">{s.desc}</div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm">Price: <span className="font-semibold">{s.price === 0 ? "Free" : `₹${s.price}`}</span></span>
-                  <Input
-                    className="w-24"
-                    type="number"
-                    defaultValue={s.price}
-                    onBlur={async (e) => { 
-                      const newPrice = Number(e.target.value);
-                      if (newPrice === s.price) return;
-                      try {
-                        await updateServiceApi(s.id, { price: newPrice });
-                        const items = await listServicesApi(vehicleType);
-                        setServices(items);
-                        toast({ title: "Price updated" });
-                      } catch (err) {
-                        toast({ title: "Failed to update price", variant: "destructive" });
-                      }
-                    }}
-                  />
-                  <Button size="sm" variant="outline" onClick={async () => { 
-                    try {
-                      await updateServiceApi(s.id, { title: s.title, desc: s.desc }); 
-                      const items = await listServicesApi(vehicleType);
-                      setServices(items);
-                      toast({ title: "Service updated" });
-                    } catch (err) {
-                      toast({ title: "Failed to update service", variant: "destructive" });
-                    }
-                  }}>Update</Button>
-                  <Button size="sm" variant="destructive" onClick={async () => { 
-                    try {
-                      await deleteServiceApi(s.id); 
-                      const items = await listServicesApi(vehicleType);
-                      setServices(items);
-                      toast({ title: "Service deleted" });
-                    } catch (err) {
-                      toast({ title: "Failed to delete service", variant: "destructive" });
-                    }
-                  }}>Delete</Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </motion.div>
+            <div className="mt-4 space-y-3">
+              {users.filter((u) => u.role === "merchant").length === 0 && <div className="rounded-lg border p-4 text-sm text-muted-foreground">No merchants</div>}
+              {users.filter((u) => u.role === "merchant").map((m) => (
+                <MerchantRow key={m.email} merchant={m} onChanged={async () => { try { const u = await listUsersFromApi(); setUsers(u); } catch { void 0; } }} />
+              ))}
+            </div>
+            <div className="mt-4 space-y-3">
+              {users.filter((u) => u.role === "staff").length === 0 && <div className="rounded-lg border p-4 text-sm text-muted-foreground">No team members</div>}
+              {users.filter((u) => u.role === "staff").map((m) => (
+                <StaffRow key={m.email} staff={m} onChanged={async () => { try { const u = await listUsersFromApi(); setUsers(u); } catch { void 0; } }} />
+              ))}
+            </div>
+          </motion.div>
         )}
 
-
-        {(tab === "dashboard" || tab === "recent-bookings") && (
-        <motion.div {...fadeUp} transition={{ delay: 0.55 }} className="rounded-xl border bg-card p-6 shadow-card">
-          <h2 className="font-heading text-xl font-bold">Recent Bookings</h2>
-          <div className="mt-4 space-y-3">
-            {!apiBookingsLoadedOnce && loadingApiBookings && (
-              <div className="rounded-lg border p-4 text-sm text-muted-foreground">Loading recent bookings…</div>
-            )}
-            {apiBookingsLoadedOnce && apiBookingsError && (
-              <div className="rounded-lg border p-4 text-sm text-red-500">
-                Failed to load recent bookings: {apiBookingsError}
+        {(tab === "dashboard" || tab === "service-history") && (
+          <motion.div {...fadeUp} transition={{ delay: 0.5 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-heading text-xl font-bold">Service History</h2>
+                <p className="text-sm text-muted-foreground">Usage stats per service</p>
               </div>
-            )}
-            {apiBookingsLoadedOnce && !loadingApiBookings && !apiBookingsError && apiBookings.length === 0 && (
-              <div className="rounded-lg border p-4 text-sm text-muted-foreground">No bookings yet</div>
-            )}
-            {loadingApiBookings && apiBookingsLoadedOnce && apiBookings.length > 0 && (
-              <div className="text-xs text-muted-foreground">Refreshing bookings…</div>
-            )}
-            {[...apiBookings]
-              .sort((a, b) => {
-                const rank = (s: unknown) => {
-                  const u = String(s || "").toUpperCase();
-                  if (u === "PENDING_ASSIGNMENT") return 0;
-                  if (u === "ASSIGNED") return 1;
-                  return 2;
-                };
-                const ra = rank(a.status);
-                const rb = rank(b.status);
-                if (ra !== rb) return ra - rb;
-                const ta = a.lastUpdatedAt ? Date.parse(a.lastUpdatedAt) : 0;
-                const tb = b.lastUpdatedAt ? Date.parse(b.lastUpdatedAt) : 0;
-                if (ta !== tb) return tb - ta;
-                const da = a.date ? Date.parse(a.date) : 0;
-                const db = b.date ? Date.parse(b.date) : 0;
-                return db - da;
-              })
-              .slice(0, 50)
-              .map((b) => (
-              <div key={b.id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="font-medium">{b.customerEmail}</div>
-                  <div className="text-sm text-muted-foreground">{(b.vehicle === "bike" ? "Bike" : "Car")} — {b.service}</div>
-                  <div className="text-xs text-muted-foreground">Reg: {b.registration || "-"}</div>
-                  {b.location && (
-                    <div className="text-xs text-muted-foreground">
-                      Location: {b.location.formatted ? b.location.formatted : (b.location.lat !== undefined && b.location.lng !== undefined ? `${b.location.lat}, ${b.location.lng}` : "-")}
-                    </div>
-                  )}
-                  {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
-                    <div className="mt-2">
-                      <div className="text-xs text-muted-foreground mb-1">Before Pickup</div>
-                      <div className="flex flex-wrap gap-2">
-                        {b.photosBefore.slice(0, 4).map((src, i) => (
-                          <Dialog key={`before-${i}`}>
-                            <DialogTrigger asChild>
-                              <img src={src} alt="Before" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
-                            </DialogTrigger>
-                            <DialogContent className="max-w-3xl p-0">
-                              <img src={src} alt="Before Full" className="w-full h-auto rounded" />
-                            </DialogContent>
-                          </Dialog>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
-                    <div className="mt-2">
-                      <div className="text-xs text-muted-foreground mb-1">Before Service</div>
-                      <div className="flex flex-wrap gap-2">
-                        {b.beforeServicePhotos.slice(0, 4).map((src, i) => (
-                          <Dialog key={`after-${i}`}>
-                            <DialogTrigger asChild>
-                              <img src={src} alt="After" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
-                            </DialogTrigger>
-                            <DialogContent className="max-w-3xl p-0">
-                              <img src={src} alt="After Full" className="w-full h-auto rounded" />
-                            </DialogContent>
-                          </Dialog>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
-                    <div className="mt-2">
-                      <div className="text-xs text-muted-foreground mb-1">After Service</div>
-                      <div className="flex flex-wrap gap-2">
-                        {b.afterServicePhotos.slice(0, 4).map((src, i) => (
-                          <Dialog key={`ret-${i}`}>
-                            <DialogTrigger asChild>
-                              <img src={src} alt="Return" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
-                            </DialogTrigger>
-                            <DialogContent className="max-w-3xl p-0">
-                              <img src={src} alt="Return Full" className="w-full h-auto rounded" />
-                            </DialogContent>
-                          </Dialog>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {typeof b.estimateTotal === "number" && (
-                    <div className="text-xs text-muted-foreground">
-                      Estimate: ₹{(b.estimateLabour || 0)} + ₹{(b.estimateParts || 0)} + ₹{(b.estimateAdditional || 0)} = ₹{b.estimateTotal}
-                    </div>
-                  )}
-                  {typeof b.ratingValue === "number" && (
-                    <div className="text-xs text-muted-foreground">
-                      Rating: {b.ratingValue}/5 {b.ratingComment ? `• "${b.ratingComment}"` : ""}
-                    </div>
-                  )}
-                  {b.lastUpdatedMessage && (
-                    <div className="text-xs text-muted-foreground">
-                      {(b.lastUpdatedByRole ? b.lastUpdatedByRole.charAt(0).toUpperCase() + b.lastUpdatedByRole.slice(1) : "System")} — {b.lastUpdatedMessage}
-                    </div>
-                  )}
-                  {(() => {
-                    const paid = Array.isArray(b.payments) ? b.payments.reduce((s, x) => s + (Number(x.amount || 0) || 0), 0) : 0;
-                    const bill = typeof b.billTotal === "number" ? b.billTotal : 0;
-                    if (!paid && !bill) return null;
-                    const due = Math.max(bill - paid, 0);
-                    return (
-                      <div className="text-xs text-muted-foreground">
-                        {`Paid: ₹${paid.toLocaleString("en-IN")}`} {bill ? `• Due: ₹${due.toLocaleString("en-IN")}` : ""}
-                      </div>
-                    );
-                  })()}
-                  {Array.isArray(b.payments) && b.payments.length > 0 && (
-                    <div className="mt-2">
-                      <div className="text-xs text-muted-foreground mb-1">Payments</div>
-                      <div className="flex flex-col gap-1">
-                        {b.payments.slice(-3).map((p, i) => (
-                          <div key={`pay-${i}`} className="text-xs">
-                            ₹{Number(p.amount || 0)} • {p.method || "-"} {p.byRole ? `• ${p.byRole}` : ""} {p.time ? `• ${new Date(p.time).toLocaleString()}` : ""}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+              <Select value={vehicleType} onValueChange={(v) => setVehicleType(v as VehicleType)}>
+                <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="car">Car</SelectItem>
+                  <SelectItem value="bike">Bike</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="mt-4 space-y-3">
+              {serviceHistory.length === 0 && (
+                <div className="rounded-lg border p-4 text-sm text-muted-foreground">No history for selected type</div>
+              )}
+              {serviceHistory.map((h) => (
+                <div key={h.service} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="font-medium">{h.service}</div>
+                  <div className="flex items-center gap-4 text-sm">
+                    <span>Total: <span className="font-semibold">{h.total}</span></span>
+                    <span>Upcoming: <span className="font-semibold">{h.upcoming}</span></span>
+                    <span>Completed: <span className="font-semibold">{h.completed}</span></span>
+                  </div>
                 </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                  <span className="text-xs text-muted-foreground">{b.date} {b.time && `• ${b.time}`}</span>
-                    {b.dropAt && (
-                      <span className="text-xs text-muted-foreground">Dropped: {new Date(b.dropAt).toLocaleString()}</span>
-                    )}
-                  <Badge variant={String(b.status).toLowerCase() === "approved" ? "secondary" : String(b.status).toLowerCase() === "pending" ? "default" : String(b.status).toLowerCase() === "rejected" ? "destructive" : "outline"}>{b.status}</Badge>
-                  {(() => {
-                    const hasMedia =
-                      (Array.isArray(b.photosBefore) && b.photosBefore.length > 0) ||
-                      (Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0) ||
-                      (Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0) ||
-                      (Array.isArray(b.photosReturn) && b.photosReturn.length > 0);
-                    if (!hasMedia) return null;
-                    return (
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button size="sm" variant="outline">View Gallery</Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-4xl">
-                          <DialogHeader>
-                            <DialogTitle>Service Gallery</DialogTitle>
-                          </DialogHeader>
-                          <div className="space-y-4">
-                            {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
-                              <div>
-                                <div className="text-xs text-muted-foreground mb-2">Before Pickup</div>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                  {b.photosBefore.map((src, i) => (
-                                    <img key={`adg-bp-${i}`} src={src} alt="Before pickup" className="w-full h-28 object-cover rounded border" />
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
-                              <div>
-                                <div className="text-xs text-muted-foreground mb-2">Before Service</div>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                  {b.beforeServicePhotos.map((src, i) => (
-                                    <img key={`adg-bs-${i}`} src={src} alt="Before service" className="w-full h-28 object-cover rounded border" />
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
-                              <div>
-                                <div className="text-xs text-muted-foreground mb-2">After Service</div>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                  {b.afterServicePhotos.map((src, i) => (
-                                    <img key={`adg-as-${i}`} src={src} alt="After service" className="w-full h-28 object-cover rounded border" />
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {Array.isArray(b.photosReturn) && b.photosReturn.length > 0 && (
-                              <div>
-                                <div className="text-xs text-muted-foreground mb-2">Return</div>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                  {b.photosReturn.map((src, i) => (
-                                    <img key={`adg-r-${i}`} src={src} alt="Return" className="w-full h-28 object-cover rounded border" />
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-                    );
-                  })()}
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Assign merchant</span>
-                    <Select
-                      value={String(b.merchantId || "")}
-                      onValueChange={async (v) => {
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {(tab === "dashboard" || tab === "invoices") && (
+          <motion.div {...fadeUp} transition={{ delay: 0.58 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <div className="flex items-center justify-between">
+              <h2 className="font-heading text-xl font-bold">Invoices</h2>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button size="sm" className="gradient-accent border-0 text-accent-foreground">Generate Invoice</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Generate Invoice</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">Booking</label>
+                      <Select
+                        value={newInvoice.bookingId}
+                        onValueChange={(val) => {
+                          const b = apiBookings.find((x) => x.id === val);
+                          setNewInvoice({
+                            bookingId: val,
+                            email: b?.customerEmail || newInvoice.email,
+                            amount: typeof b?.price === "number" ? b!.price! : newInvoice.amount,
+                          });
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select booking" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {apiBookings.map((b) => (
+                            <SelectItem key={b.id} value={b.id}>
+                              {b.customerEmail} — {b.service} {b.date ? `(${b.date})` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">Customer Email</label>
+                      <Input
+                        type="email"
+                        value={newInvoice.email}
+                        onChange={(e) => setNewInvoice({ ...newInvoice, email: e.target.value })}
+                        placeholder="customer@example.com"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">Amount</label>
+                      <Input
+                        type="number"
+                        value={String(newInvoice.amount || "")}
+                        onChange={(e) => setNewInvoice({ ...newInvoice, amount: Number(e.target.value || 0) })}
+                        placeholder="49"
+                      />
+                    </div>
+                    <Button
+                      disabled={savingInvoice || !newInvoice.bookingId || !newInvoice.email || !newInvoice.amount}
+                      onClick={async () => {
+                        if (!newInvoice.bookingId || !newInvoice.amount) return;
                         try {
-                          setApiBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, merchantId: v } : x)));
-                          await patchBookingApi(b.id, { action: "assign_merchant", merchantId: v });
+                          setSavingInvoice(true);
+                          await patchBookingApi(newInvoice.bookingId, {
+                            action: "add_payment",
+                            amount: newInvoice.amount,
+                            method: "admin",
+                            reference: "manual-invoice",
+                          });
                           const next = await listApiBookings({ limit: 100 });
                           setApiBookings(next);
+                          setNewInvoice({ bookingId: "", email: "", amount: 0 });
+                          toast({ title: "Invoice recorded" });
                         } catch (err) {
                           const message = err instanceof Error ? err.message : String(err);
-                          toast({ title: "Failed to assign merchant", description: message, variant: "destructive" });
-                          const next = await listApiBookings({ limit: 100 });
-                          setApiBookings(next);
+                          toast({ title: "Failed", description: message, variant: "destructive" });
+                        } finally {
+                          setSavingInvoice(false);
                         }
                       }}
+                      className="w-full gradient-accent border-0 text-accent-foreground"
                     >
-                      <SelectTrigger className="w-44"><SelectValue placeholder="Select merchant" /></SelectTrigger>
-                      <SelectContent>
-                        {users.filter((u) => u.role === "merchant").length === 0 ? (
-                          <SelectItem disabled value="_">No merchants</SelectItem>
-                        ) : (
-                          users.filter((u) => u.role === "merchant").map((m) => (
-                            <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
+                      {savingInvoice ? (<span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving...</span>) : "Save"}
+                    </Button>
                   </div>
-                  {/* Assign staff - only for pickups */}
-                  {(() => {
-                    const loc = b.location || {};
-                    const hasLat = typeof loc.lat === "number" && !isNaN(loc.lat);
-                    const hasLng = typeof loc.lng === "number" && !isNaN(loc.lng);
-                    const hasAddr = typeof loc.formatted === "string" && loc.formatted.trim().length > 0 && loc.formatted.trim() !== "-";
-                    if (!(hasLat || hasLng || hasAddr)) return null;
-                    return (
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">Assign staff</span>
-                        <Select
-                          value={String(b.staffId || "")}
-                          onValueChange={async (v) => {
-                            try {
-                              setApiBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, staffId: v } : x)));
-                              await patchBookingApi(b.id, { action: "assign_staff", staffId: v });
-                              const next = await listApiBookings({ limit: 100 });
-                              setApiBookings(next);
-                              addNotificationForUser(v, "New Task", `Booking assigned: ${b.service}`);
-                              toast({ title: "Staff assigned", description: v });
-                            } catch (err) {
-                              const message = err instanceof Error ? err.message : String(err);
-                              toast({ title: "Failed to assign staff", description: message, variant: "destructive" });
-                              const next = await listApiBookings({ limit: 100 });
-                              setApiBookings(next);
-                            }
-                          }}
-                        >
-                          <SelectTrigger className="w-44"><SelectValue placeholder="Select staff" /></SelectTrigger>
-                          <SelectContent>
-                            {users.filter((u) => u.role === "staff" && !!u.staffOnline).length === 0 ? (
-                              <SelectItem disabled value="_">No online staff</SelectItem>
-                            ) : (
-                              users.filter((u) => u.role === "staff" && !!u.staffOnline).map((s) => (
-                                <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    );
-                  })()}
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Update status</span>
-                    <Select
-                      value={String(b.status || "")}
-                      onValueChange={async (v) => {
-                        try {
-                          await patchBookingApi(b.id, { action: "admin_update_status", status: v });
-                          const next = await listApiBookings({ limit: 100 });
-                          setApiBookings(next);
-                          toast({ title: "Status updated", description: `${b.customerEmail} • ${v}` });
-                        } catch (err) {
-                          const message = err instanceof Error ? err.message : String(err);
-                          toast({ title: "Failed to update status", description: message, variant: "destructive" });
-                          const next = await listApiBookings({ limit: 100 });
-                          setApiBookings(next);
-                        }
+                </DialogContent>
+              </Dialog>
+            </div>
+            <div className="mt-4 space-y-3">
+              {adminInvoices.length === 0 && (
+                <div className="rounded-lg border p-4 text-sm text-muted-foreground">No invoices</div>
+              )}
+              {adminInvoices.map((inv) => (
+                <div key={inv.id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="font-medium">{inv.invoiceNo}</div>
+                    <div className="text-sm text-muted-foreground">{inv.customerEmail} — ₹{inv.amount}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Badge variant={inv.status === "Paid" ? "secondary" : "outline"}>{inv.status}</Badge>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const b = apiBookings.find((x) => x.id === inv.bookingId);
+                        downloadInvoice(inv, { service: b?.service, date: b?.date });
                       }}
                     >
-                      <SelectTrigger className="w-44"><SelectValue placeholder="Select status" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="in_progress">In Progress</SelectItem>
-                        <SelectItem value="pickup_done">Pickup Done</SelectItem>
-                        <SelectItem value="repair_done">Repair Done</SelectItem>
-                        <SelectItem value="awaiting_payment">Awaiting Payment</SelectItem>
-                        <SelectItem value="completed">Completed</SelectItem>
-                        <SelectItem value="paid">Paid</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button size="sm" variant="outline">Record Payment</Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Record Payment</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-3">
-                          <div>
-                            <label className="mb-1 block text-sm font-medium">Amount</label>
-                            <Input id={`pay-amt-${b.id}`} type="number" placeholder="0" />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-sm font-medium">Method</label>
-                            <Input id={`pay-met-${b.id}`} placeholder="UPI / Cash / Card" />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-sm font-medium">Reference</label>
-                            <Input id={`pay-ref-${b.id}`} placeholder="Txn / UTR / last 4" />
-                          </div>
-                          <Button
-                            onClick={async () => {
-                              const amtEl = document.getElementById(`pay-amt-${b.id}`) as HTMLInputElement | null;
-                              const metEl = document.getElementById(`pay-met-${b.id}`) as HTMLInputElement | null;
-                              const refEl = document.getElementById(`pay-ref-${b.id}`) as HTMLInputElement | null;
-                              const amount = Number(amtEl?.value || 0);
-                              const method = metEl?.value || "";
-                              const reference = refEl?.value || "";
-                              if (!amount || amount <= 0) { toast({ title: "Amount required", variant: "destructive" }); return; }
-                          try {
-                            await patchBookingApi(b.id, { action: "add_payment", amount, method, reference });
-                            const next = await listApiBookings({ limit: 100 });
-                            setApiBookings(next);
-                            toast({ title: "Payment recorded", description: `${b.customerEmail} • ₹${amount}` });
-                          } catch (err) {
-                            const message = err instanceof Error ? err.message : String(err);
-                            toast({ title: "Failed to record", description: message, variant: "destructive" });
-                          }
-                            }}
-                            className="w-full gradient-accent border-0 text-accent-foreground"
-                          >
-                            Save
-                          </Button>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button size="sm" variant="outline">Payment History</Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-2xl">
-                        <DialogHeader>
-                          <DialogTitle>Payment History</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-3">
-                          {Array.isArray(b.payments) && b.payments.length > 0 ? (
-                            <>
-                              <div className="rounded-md border">
-                                <div className="grid grid-cols-5 gap-2 p-2 text-xs font-medium text-muted-foreground">
-                                  <div>Amount</div>
-                                  <div>Method</div>
-                                  <div>Reference</div>
-                                  <div>By</div>
-                                  <div>Time</div>
-                                </div>
-                                <div className="divide-y">
-                                  {b.payments.map((p, i) => (
-                                    <div key={`ah-${i}`} className="grid grid-cols-5 gap-2 p-2 text-xs">
-                                      <div>₹{Number(p.amount || 0)}</div>
-                                      <div>{p.method || "-"}</div>
-                                      <div>{p.reference || "-"}</div>
-                                      <div>{p.byRole || "-"}</div>
-                                      <div>{p.time ? new Date(p.time).toLocaleString() : "-"}</div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                              <div className="flex justify-end">
-                                <Button
-                                  size="sm"
-                                  onClick={() => {
-                                    const rows = [["amount","method","reference","byRole","time"], ...(b.payments || []).map(p => [
-                                      String(p.amount ?? ""),
-                                      String(p.method ?? ""),
-                                      String(p.reference ?? ""),
-                                      String(p.byRole ?? ""),
-                                      p.time ? new Date(p.time).toISOString() : ""
-                                    ])];
-                                    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
-                                    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-                                    const url = URL.createObjectURL(blob);
-                                    const a = document.createElement("a");
-                                    a.href = url;
-                                    a.download = `payments-${b.id}.csv`;
-                                    document.body.appendChild(a);
-                                    a.click();
-                                    document.body.removeChild(a);
-                                    URL.revokeObjectURL(url);
-                                  }}
-                                >
-                                  Export CSV
-                                </Button>
-                              </div>
-                            </>
-                          ) : (
-                            <div className="rounded-lg border p-4 text-sm text-muted-foreground">No payments yet</div>
-                          )}
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                    {["paid", "delivered", "completed"].includes(String(b.status).toLowerCase()) ? (
-                      <Badge variant="secondary">PAID</Badge>
-                    ) : (
+                      Download
+                    </Button>
+                    {inv.status !== "Paid" && (
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={async () => {
+                          const b = apiBookings.find((x) => x.id === inv.bookingId);
+                          if (!b) return;
+                          const bill = typeof b.billTotal === "number" && b.billTotal > 0 ? b.billTotal : inv.amount;
+                          const paid = Array.isArray(b.payments)
+                            ? b.payments.reduce((s, x) => s + (Number(x.amount || 0) || 0), 0)
+                            : 0;
+                          const remaining = bill - paid;
+                          if (remaining <= 0) return;
                           try {
-                            await patchBookingApi(b.id, { action: "admin_update_status", status: "paid" });
+                            await patchBookingApi(b.id, {
+                              action: "add_payment",
+                              amount: remaining,
+                              method: "admin",
+                              reference: "mark-paid",
+                            });
                             const next = await listApiBookings({ limit: 100 });
                             setApiBookings(next);
-                            toast({ title: "Marked Paid", description: b.customerEmail });
+                            toast({ title: "Marked as paid", description: inv.invoiceNo });
                           } catch (err) {
                             const message = err instanceof Error ? err.message : String(err);
-                            toast({ title: "Failed to mark paid", description: message, variant: "destructive" });
-                            const next = await listApiBookings({ limit: 100 });
-                            setApiBookings(next);
+                            toast({ title: "Failed", description: message, variant: "destructive" });
                           }
                         }}
                       >
@@ -1323,463 +1733,53 @@ const AdminDashboard = () => {
                       </Button>
                     )}
                   </div>
-                  {String(b.status).toUpperCase() === "PENDING_ASSIGNMENT" ? (
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        className="gradient-accent border-0 text-accent-foreground"
-                        onClick={async () => {
-                          const loc = b.location || {};
-                          const hasLat = typeof loc.lat === "number" && !isNaN(loc.lat);
-                          const hasLng = typeof loc.lng === "number" && !isNaN(loc.lng);
-                          const hasAddr = typeof loc.formatted === "string" && loc.formatted.trim().length > 0 && loc.formatted.trim() !== "-";
-                          const isPickup = hasLat || hasLng || hasAddr;
-
-                          if (!b.merchantId || (isPickup && !b.staffId)) {
-                            const desc = isPickup ? "Assign both merchant and staff before approval (Pickup required)" : "Assign merchant before approval (Visit required)";
-                            toast({ title: "Assignment required", description: desc, variant: "destructive" });
-                            return;
-                          }
-                          const ok = window.confirm(`Approve booking for ${b.customerEmail}?`);
-                          if (!ok) return;
-                          try {
-                            // Optimistic update
-                            const nextStatus = isPickup ? "ASSIGNED" : "AT_SERVICE_CENTER";
-                            setApiBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, status: nextStatus } : x)));
-
-                            await patchBookingApi(b.id, { action: "approve" });
-                            const next = await listApiBookings({ limit: 100 });
-                            setApiBookings(next);
-                            addNotificationForUser(String(b.merchantId), "New Booking", `Assigned booking for ${b.customerEmail}`);
-                            if (isPickup && b.staffId) {
-                              addNotificationForUser(String(b.staffId), "New Task", `Booking assigned: ${b.service}`);
-                            }
-                            toast({ title: "Approved", description: b.customerEmail });
-                          } catch (err) {
-                            const message = err instanceof Error ? err.message : String(err);
-                            toast({ title: "Approval failed", description: message, variant: "destructive" });
-                            const next = await listApiBookings({ limit: 100 });
-                            setApiBookings(next);
-                          }
-                        }}
-                      >
-                        Approve
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-destructive border-destructive/30"
-                        onClick={async () => {
-                          const ok = window.confirm(`Reject booking for ${b.customerEmail}?`);
-                          if (!ok) return;
-                          try {
-                            // Optimistic update
-                            setApiBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, status: "REVISION_REQUIRED" } : x)));
-
-                            await patchBookingApi(b.id, { action: "reject" });
-                            const next = await listApiBookings({ limit: 100 });
-                            setApiBookings(next);
-                            toast({ title: "Rejected", description: b.customerEmail });
-                          } catch (err) {
-                            const message = err instanceof Error ? err.message : String(err);
-                            toast({ title: "Rejection failed", description: message, variant: "destructive" });
-                            const next = await listApiBookings({ limit: 100 });
-                            setApiBookings(next);
-                          }
-                        }}
-                      >
-                        Reject
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="gradient-accent border-0 text-accent-foreground"
-                        onClick={async () => {
-                          const amount = Number(String(b.price || "0").replace(/[^0-9.]/g, ""));
-                          if (!amount || !b.id) return;
-                          try {
-                            await patchBookingApi(b.id, {
-                              action: "add_payment",
-                              amount,
-                              method: "admin",
-                              reference: "manual-invoice",
-                            });
-                            const next = await listApiBookings({ limit: 100 });
-                            setApiBookings(next);
-                            toast({ title: "Invoice recorded", description: `${b.customerEmail} • ₹${amount}` });
-                          } catch (err) {
-                            const message = err instanceof Error ? err.message : String(err);
-                            toast({ title: "Failed", description: message, variant: "destructive" });
-                          }
-                        }}
-                      >
-                        Generate Invoice
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={async () => {
-                          const ok = window.confirm(`Delete booking for ${b.customerEmail}? This cannot be undone.`);
-                          if (!ok) return;
-                          try {
-                            await deleteApiBooking(b.id);
-                            const next = await listApiBookings({ limit: 100 });
-                            setApiBookings(next);
-                            toast({ title: "Booking deleted", description: b.customerEmail });
-                          } catch (err) {
-                            const message = err instanceof Error ? err.message : String(err);
-                            toast({ title: "Delete failed", description: message, variant: "destructive" });
-                          }
-                        }}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary">{String(b.status).toUpperCase()}</Badge>
-                      <Button
-                        size="sm"
-                        className="gradient-accent border-0 text-accent-foreground"
-                        onClick={async () => {
-                          const amount = Number(String(b.price || "0").replace(/[^0-9.]/g, ""));
-                          if (!amount || !b.id) return;
-                          try {
-                            await patchBookingApi(b.id, {
-                              action: "add_payment",
-                              amount,
-                              method: "admin",
-                              reference: "manual-invoice",
-                            });
-                            const next = await listApiBookings({ limit: 100 });
-                            setApiBookings(next);
-                            toast({ title: "Invoice recorded", description: `${b.customerEmail} • ₹${amount}` });
-                          } catch (err) {
-                            const message = err instanceof Error ? err.message : String(err);
-                            toast({ title: "Failed", description: message, variant: "destructive" });
-                          }
-                        }}
-                      >
-                        Generate Invoice
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={async () => {
-                          const ok = window.confirm(`Delete booking for ${b.customerEmail}? This cannot be undone.`);
-                          if (!ok) return;
-                          try {
-                            await deleteApiBooking(b.id);
-                            const next = await listApiBookings({ limit: 100 });
-                            setApiBookings(next);
-                            toast({ title: "Booking deleted", description: b.customerEmail });
-                          } catch (err) {
-                            const message = err instanceof Error ? err.message : String(err);
-                            toast({ title: "Delete failed", description: message, variant: "destructive" });
-                          }
-                        }}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  )}
                 </div>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-        )}
-
-        {(tab === "dashboard" || tab === "create-accounts") && (
-        <motion.div {...fadeUp} transition={{ delay: 0.45 }} className="rounded-xl border bg-card p-6 shadow-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-heading text-xl font-bold">Manage Merchants & Staff</h2>
-              <p className="text-sm text-muted-foreground">Add and remove team members</p>
+              ))}
             </div>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button size="sm" className="gradient-accent border-0 text-accent-foreground">Add Member</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add Team Member</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-3">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">Full Name</label>
-                    <Input value={newStaff.name} onChange={(e) => setNewStaff({ ...newStaff, name: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">Email</label>
-                    <Input type="email" value={newStaff.email} onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">Role</label>
-                    <Select value={newStaff.role} onValueChange={(v) => setNewStaff({ ...newStaff, role: v as MemberRole })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Staff">Staff</SelectItem>
-                        <SelectItem value="Merchant">Merchant</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button
-                    onClick={() => {
-                      if (!newStaff.name || !newStaff.email) return;
-                      if (newStaff.role === "Merchant") {
-                        addRegistration({ name: newStaff.name, email: newStaff.email, role: "Merchant" });
-                        setRegistrations(listRegistrations());
-                      } else {
-                        addStaff({ name: newStaff.name, email: newStaff.email, role: "Staff" });
-                        setStaff(listStaff());
-                      }
-                      setNewStaff({ name: "", email: "", role: "Staff" });
-                    }}
-                    className="w-full gradient-accent border-0 text-accent-foreground"
-                  >
-                    Save
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-          <div className="mt-4 space-y-3">
-            {users.filter((u) => u.role === "merchant").length === 0 && <div className="rounded-lg border p-4 text-sm text-muted-foreground">No merchants</div>}
-            {users.filter((u) => u.role === "merchant").map((m) => (
-              <MerchantRow key={m.email} merchant={m} onChanged={async () => { try { const u = await listUsersFromApi(); setUsers(u); } catch { void 0; } }} />
-            ))}
-          </div>
-          <div className="mt-4 space-y-3">
-            {users.filter((u) => u.role === "staff").length === 0 && <div className="rounded-lg border p-4 text-sm text-muted-foreground">No team members</div>}
-            {users.filter((u) => u.role === "staff").map((m) => (
-              <StaffRow key={m.email} staff={m} onChanged={async () => { try { const u = await listUsersFromApi(); setUsers(u); } catch { void 0; } }} />
-            ))}
-          </div>
-        </motion.div>
-        )}
-
-        {(tab === "dashboard" || tab === "service-history") && (
-        <motion.div {...fadeUp} transition={{ delay: 0.5 }} className="rounded-xl border bg-card p-6 shadow-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-heading text-xl font-bold">Service History</h2>
-              <p className="text-sm text-muted-foreground">Usage stats per service</p>
-            </div>
-            <Select value={vehicleType} onValueChange={(v) => setVehicleType(v as VehicleType)}>
-              <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="car">Car</SelectItem>
-                <SelectItem value="bike">Bike</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="mt-4 space-y-3">
-            {serviceHistory.length === 0 && (
-              <div className="rounded-lg border p-4 text-sm text-muted-foreground">No history for selected type</div>
-            )}
-            {serviceHistory.map((h) => (
-              <div key={h.service} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="font-medium">{h.service}</div>
-                <div className="flex items-center gap-4 text-sm">
-                  <span>Total: <span className="font-semibold">{h.total}</span></span>
-                  <span>Upcoming: <span className="font-semibold">{h.upcoming}</span></span>
-                  <span>Completed: <span className="font-semibold">{h.completed}</span></span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-        )}
-
-        {(tab === "dashboard" || tab === "invoices") && (
-        <motion.div {...fadeUp} transition={{ delay: 0.58 }} className="rounded-xl border bg-card p-6 shadow-card">
-          <div className="flex items-center justify-between">
-            <h2 className="font-heading text-xl font-bold">Invoices</h2>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button size="sm" className="gradient-accent border-0 text-accent-foreground">Generate Invoice</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Generate Invoice</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-3">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">Booking</label>
-                    <Select
-                      value={newInvoice.bookingId}
-                      onValueChange={(val) => {
-                        const b = apiBookings.find((x) => x.id === val);
-                        setNewInvoice({
-                          bookingId: val,
-                          email: b?.customerEmail || newInvoice.email,
-                          amount: typeof b?.price === "number" ? b!.price! : newInvoice.amount,
-                        });
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select booking" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {apiBookings.map((b) => (
-                          <SelectItem key={b.id} value={b.id}>
-                            {b.customerEmail} — {b.service} {b.date ? `(${b.date})` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">Customer Email</label>
-                    <Input
-                      type="email"
-                      value={newInvoice.email}
-                      onChange={(e) => setNewInvoice({ ...newInvoice, email: e.target.value })}
-                      placeholder="customer@example.com"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">Amount</label>
-                    <Input
-                      type="number"
-                      value={String(newInvoice.amount || "")}
-                      onChange={(e) => setNewInvoice({ ...newInvoice, amount: Number(e.target.value || 0) })}
-                      placeholder="49"
-                    />
-                  </div>
-                  <Button
-                    disabled={savingInvoice || !newInvoice.bookingId || !newInvoice.email || !newInvoice.amount}
-                    onClick={async () => {
-                      if (!newInvoice.bookingId || !newInvoice.amount) return;
-                      try {
-                        setSavingInvoice(true);
-                        await patchBookingApi(newInvoice.bookingId, {
-                          action: "add_payment",
-                          amount: newInvoice.amount,
-                          method: "admin",
-                          reference: "manual-invoice",
-                        });
-                        const next = await listApiBookings({ limit: 100 });
-                        setApiBookings(next);
-                        setNewInvoice({ bookingId: "", email: "", amount: 0 });
-                        toast({ title: "Invoice recorded" });
-                      } catch (err) {
-                        const message = err instanceof Error ? err.message : String(err);
-                        toast({ title: "Failed", description: message, variant: "destructive" });
-                      } finally {
-                        setSavingInvoice(false);
-                      }
-                    }}
-                    className="w-full gradient-accent border-0 text-accent-foreground"
-                  >
-                    {savingInvoice ? (<span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving...</span>) : "Save"}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-          <div className="mt-4 space-y-3">
-            {adminInvoices.length === 0 && (
-              <div className="rounded-lg border p-4 text-sm text-muted-foreground">No invoices</div>
-            )}
-            {adminInvoices.map((inv) => (
-              <div key={inv.id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="font-medium">{inv.invoiceNo}</div>
-                  <div className="text-sm text-muted-foreground">{inv.customerEmail} — ₹{inv.amount}</div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Badge variant={inv.status === "Paid" ? "secondary" : "outline"}>{inv.status}</Badge>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      const b = apiBookings.find((x) => x.id === inv.bookingId);
-                      downloadInvoice(inv, { service: b?.service, date: b?.date });
-                    }}
-                  >
-                    Download
-                  </Button>
-                  {inv.status !== "Paid" && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={async () => {
-                        const b = apiBookings.find((x) => x.id === inv.bookingId);
-                        if (!b) return;
-                        const bill = typeof b.billTotal === "number" && b.billTotal > 0 ? b.billTotal : inv.amount;
-                        const paid = Array.isArray(b.payments)
-                          ? b.payments.reduce((s, x) => s + (Number(x.amount || 0) || 0), 0)
-                          : 0;
-                        const remaining = bill - paid;
-                        if (remaining <= 0) return;
-                        try {
-                          await patchBookingApi(b.id, {
-                            action: "add_payment",
-                            amount: remaining,
-                            method: "admin",
-                            reference: "mark-paid",
-                          });
-                          const next = await listApiBookings({ limit: 100 });
-                          setApiBookings(next);
-                          toast({ title: "Marked as paid", description: inv.invoiceNo });
-                        } catch (err) {
-                          const message = err instanceof Error ? err.message : String(err);
-                          toast({ title: "Failed", description: message, variant: "destructive" });
-                        }
-                      }}
-                    >
-                      Mark Paid
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </motion.div>
+          </motion.div>
         )}
 
         {(tab === "dashboard" || tab === "registration-history") && (
-        <motion.div {...fadeUp} transition={{ delay: 0.5 }} className="rounded-xl border bg-card p-6 shadow-card">
-          <h2 className="font-heading text-xl font-bold">Registration History</h2>
-          <p className="text-sm text-muted-foreground">All users who registered</p>
-          <div className="mt-4 space-y-3">
-            {registrations.length === 0 && (
-              <div className="rounded-lg border p-4 text-sm text-muted-foreground">No registrations yet</div>
-            )}
-            {registrations.map((r) => (
-              <div key={r.email} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="font-medium">{r.name}</div>
-                  <div className="text-sm text-muted-foreground">{r.email}</div>
+          <motion.div {...fadeUp} transition={{ delay: 0.5 }} className="rounded-xl border bg-card p-6 shadow-card">
+            <h2 className="font-heading text-xl font-bold">Registration History</h2>
+            <p className="text-sm text-muted-foreground">All users who registered</p>
+            <div className="mt-4 space-y-3">
+              {registrations.length === 0 && (
+                <div className="rounded-lg border p-4 text-sm text-muted-foreground">No registrations yet</div>
+              )}
+              {registrations.map((r) => (
+                <div key={r.email} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="font-medium">{r.name}</div>
+                    <div className="text-sm text-muted-foreground">{r.email}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Badge variant={r.role === "Staff" ? "secondary" : r.role === "Merchant" ? "outline" : "default"}>{r.role}</Badge>
+                    <span className="text-xs text-muted-foreground">{r.date}</span>
+                    <Button size="sm" variant="outline" onClick={() => setOpenReg(r)}>View</Button>
+                    <Button size="sm" variant="destructive" onClick={() => removeRegistrationAndUser(r.email)}>Remove</Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <Badge variant={r.role === "Staff" ? "secondary" : r.role === "Merchant" ? "outline" : "default"}>{r.role}</Badge>
-                  <span className="text-xs text-muted-foreground">{r.date}</span>
-                  <Button size="sm" variant="outline" onClick={() => setOpenReg(r)}>View</Button>
-                  <Button size="sm" variant="destructive" onClick={() => removeRegistrationAndUser(r.email)}>Remove</Button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <Dialog open={!!openReg} onOpenChange={(v) => setOpenReg(v ? openReg : null)}>
-            <DialogTrigger asChild><span /></DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Registration Details</DialogTitle>
-              </DialogHeader>
-              {openReg ? (
-                <div className="space-y-2">
-                  <div className="text-sm"><span className="font-medium">Name:</span> {openReg.name}</div>
-                  <div className="text-sm"><span className="font-medium">Email:</span> {openReg.email}</div>
-                  <div className="text-sm"><span className="font-medium">Role:</span> {openReg.role}</div>
-                  <div className="text-sm"><span className="font-medium">Date:</span> {openReg.date}</div>
-                  <div className="text-sm"><span className="font-medium">Address:</span> {openReg.address || "-"}</div>
-                </div>
-              ) : null}
-            </DialogContent>
-          </Dialog>
-        </motion.div>
+              ))}
+            </div>
+            <Dialog open={!!openReg} onOpenChange={(v) => setOpenReg(v ? openReg : null)}>
+              <DialogTrigger asChild><span /></DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Registration Details</DialogTitle>
+                </DialogHeader>
+                {openReg ? (
+                  <div className="space-y-2">
+                    <div className="text-sm"><span className="font-medium">Name:</span> {openReg.name}</div>
+                    <div className="text-sm"><span className="font-medium">Email:</span> {openReg.email}</div>
+                    <div className="text-sm"><span className="font-medium">Role:</span> {openReg.role}</div>
+                    <div className="text-sm"><span className="font-medium">Date:</span> {openReg.date}</div>
+                    <div className="text-sm"><span className="font-medium">Address:</span> {openReg.address || "-"}</div>
+                  </div>
+                ) : null}
+              </DialogContent>
+            </Dialog>
+          </motion.div>
         )}
 
         {tab === "merchant-map" && (
@@ -1866,7 +1866,7 @@ function MerchantRow({ merchant, onChanged }: { merchant: ApiUser; onChanged: ()
         <div className="text-xs text-muted-foreground">
           {merchant.location?.lat !== undefined && merchant.location?.lng !== undefined
             ? `${merchant.location.lat},${merchant.location.lng}`
-            : "No location"} 
+            : "No location"}
         </div>
       </div>
       <div className="flex items-center gap-3">

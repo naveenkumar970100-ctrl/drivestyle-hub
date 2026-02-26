@@ -79,7 +79,7 @@ const CustomerDashboard = () => {
             const list = await listApiBookings(
               session?.role === "Admin" || !email ? { limit: 100 } : { email, limit: 100 },
             );
-            setApiBookings(list);
+            tApiBookings(list);
           } catch {
             setApiBookings([]);
           }
@@ -128,7 +128,7 @@ const CustomerDashboard = () => {
         const list = await listApiBookings(
           session?.role === "Admin" || !email ? { limit: 100 } : { email, limit: 100 },
         );
-        setApiBookings(list);
+        tApiBookings(list);
       } catch (_e) {
         void 0;
       }
@@ -191,8 +191,8 @@ const CustomerDashboard = () => {
                     </div>
                     <div>
                       <label className="mb-1 block text-sm font-medium">Select Service</label>
-                      <Select 
-                        value={bookingForm.service} 
+                      <Select
+                        value={bookingForm.service}
                         onValueChange={(v) => setBookingForm({ ...bookingForm, service: v })}
                       >
                         <SelectTrigger><SelectValue placeholder="Select a service" /></SelectTrigger>
@@ -319,7 +319,7 @@ const CustomerDashboard = () => {
                         try {
                           const selectedService = services.find(s => s.title === bookingForm.service && s.vehicle === bookingForm.vehicle);
                           const finalPrice = selectedService ? selectedService.price : (bookingForm.vehicle === "bike" ? 199 : 499);
-                          
+
                           await createBookingApi({
                             customerEmail: session.email,
                             vehicle: bookingForm.vehicle,
@@ -652,7 +652,7 @@ const CustomerDashboard = () => {
                       <div className="mt-2">
                         <div className="text-xs text-muted-foreground mb-1">Before Service</div>
                         <div className="flex flex-wrap gap-2">
-                        {b.beforeServicePhotos.slice(0, 4).map((src, i) => (
+                          {b.beforeServicePhotos.slice(0, 4).map((src, i) => (
                             <Dialog key={`after-${i}`}>
                               <DialogTrigger asChild>
                                 <img src={src} alt="After" className="h-14 w-14 rounded object-cover border cursor-zoom-in" />
@@ -669,7 +669,7 @@ const CustomerDashboard = () => {
                       <div className="mt-2">
                         <div className="text-xs text-muted-foreground mb-1">After Service</div>
                         <div className="flex flex-wrap gap-2">
-                        {b.afterServicePhotos.slice(0, 4).map((src, i) => (
+                          {b.afterServicePhotos.slice(0, 4).map((src, i) => (
                             <Dialog key={`ret-${i}`}>
                               <DialogTrigger asChild>
                                 <img src={src} alt="Return" className="h-14 w-14 rounded object-cover border cursor-zoom-in" />
@@ -719,165 +719,165 @@ const CustomerDashboard = () => {
                     <span className="text-xs text-muted-foreground">{b.date || "-"} {b.time && `• ${b.time}`}</span>
                     <Badge variant={String(b.status).toLowerCase() === "approved" ? "secondary" : String(b.status).toLowerCase() === "pending" ? "default" : String(b.status).toLowerCase() === "rejected" ? "destructive" : "outline"}>{b.status}</Badge>
                   </div>
-              {(() => {
-                const staff = users.find((u) => u.id && String(u.id) === String(b.staffId));
-                const live = staff?.liveLocation;
-                const hasLive = !!(live && live.lat !== undefined && live.lng !== undefined);
-                const statusUpper = String(b.status).toUpperCase();
-                if (!hasLive) return null;
-                if (statusUpper === "COMPLETED" || statusUpper === "DELIVERED") return null;
-                return (
-                  <div className="flex items-center justify-between pt-2">
-                    <div className="text-xs text-muted-foreground">
-                      Staff: {staff?.name || staff?.email || "Assigned"} {staff?.staffOnline ? "• Online" : "• Offline"}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button size="sm" variant="outline">Track Location</Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-3xl">
-                          <DialogHeader>
-                            <DialogTitle>Staff Live Location</DialogTitle>
-                          </DialogHeader>
-                          <div className="rounded-lg overflow-hidden">
-                            <MapContainer center={[Number(live!.lat), Number(live!.lng)] as [number, number]} zoom={14} style={{ height: 380 }} scrollWheelZoom>
-                              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                              <Marker position={[Number(live!.lat), Number(live!.lng)] as [number, number]} />
-                              {b.location?.lat !== undefined && b.location?.lng !== undefined && (
-                                <Marker position={[Number(b.location.lat), Number(b.location.lng)] as [number, number]} />
-                              )}
-                            </MapContainer>
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {`Updated: ${live?.updatedAt || "-"}`}
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button size="icon" variant="outline" aria-label="View Images">
-                            <ImageIcon className="h-4 w-4" />
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-4xl">
-                          <DialogHeader>
-                            <DialogTitle>Service Images</DialogTitle>
-                          </DialogHeader>
-                          {(() => {
-                            const hasMedia =
-                              (Array.isArray(b.photosBefore) && b.photosBefore.length > 0) ||
-                              (Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0) ||
-                              (Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0) ||
-                              (Array.isArray(b.photosReturn) && b.photosReturn.length > 0);
-                            if (!hasMedia) {
-                              return <div className="text-sm text-muted-foreground">No images uploaded yet.</div>;
-                            }
-                            return (
-                              <div className="space-y-4">
-                                {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
-                                  <div>
-                                    <div className="text-xs text-muted-foreground mb-2">Before Pickup</div>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                      {b.photosBefore.map((src, i) => (
-                                        <img key={`tl-g-b-${i}`} src={src} alt="Before" className="w-full h-28 object-cover rounded border" />
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                                {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
-                                  <div>
-                                    <div className="text-xs text-muted-foreground mb-2">Before Service</div>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                      {b.beforeServicePhotos.map((src, i) => (
-                                        <img key={`tl-g-a-${i}`} src={src} alt="After" className="w-full h-28 object-cover rounded border" />
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                                {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
-                                  <div>
-                                    <div className="text-xs text-muted-foreground mb-2">After Service</div>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                      {b.afterServicePhotos.map((src, i) => (
-                                        <img key={`tl-g-r-${i}`} src={src} alt="Return" className="w-full h-28 object-cover rounded border" />
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
-                        </DialogContent>
-                      </Dialog>
-                    </div>
-                  </div>
-                );
-              })()}
-              {(() => {
-                const hasMedia =
-                  (Array.isArray(b.photosBefore) && b.photosBefore.length > 0) ||
-                  (Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0) ||
-                  (Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0) ||
-                  (Array.isArray(b.photosReturn) && b.photosReturn.length > 0);
-                if (!hasMedia) return null;
-                return (
-                  <div className="flex items-center justify-end pt-2">
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button size="sm" variant="outline">View Gallery</Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-4xl">
-                        <DialogHeader>
-                          <DialogTitle>Service Gallery</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                          {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
-                            <div>
-                              <div className="text-xs text-muted-foreground mb-2">Before Pickup</div>
-                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                {b.photosBefore.map((src, i) => (
-                                  <img key={`g-bp-${i}`} src={src} alt="Before pickup" className="w-full h-28 object-cover rounded border" />
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
-                            <div>
-                              <div className="text-xs text-muted-foreground mb-2">Before Service</div>
-                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                {b.beforeServicePhotos.map((src, i) => (
-                                  <img key={`g-bs-${i}`} src={src} alt="Before service" className="w-full h-28 object-cover rounded border" />
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
-                            <div>
-                              <div className="text-xs text-muted-foreground mb-2">After Service</div>
-                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                {b.afterServicePhotos.map((src, i) => (
-                                  <img key={`g-as-${i}`} src={src} alt="After service" className="w-full h-28 object-cover rounded border" />
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {Array.isArray(b.photosReturn) && b.photosReturn.length > 0 && (
-                            <div>
-                              <div className="text-xs text-muted-foreground mb-2">Return</div>
-                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                {b.photosReturn.map((src, i) => (
-                                  <img key={`g-r-${i}`} src={src} alt="Return" className="w-full h-28 object-cover rounded border" />
-                                ))}
-                              </div>
-                            </div>
-                          )}
+                  {(() => {
+                    const staff = users.find((u) => u.id && String(u.id) === String(b.staffId));
+                    const live = staff?.liveLocation;
+                    const hasLive = !!(live && live.lat !== undefined && live.lng !== undefined);
+                    const statusUpper = String(b.status).toUpperCase();
+                    if (!hasLive) return null;
+                    if (statusUpper === "COMPLETED" || statusUpper === "DELIVERED") return null;
+                    return (
+                      <div className="flex items-center justify-between pt-2">
+                        <div className="text-xs text-muted-foreground">
+                          Staff: {staff?.name || staff?.email || "Assigned"} {staff?.staffOnline ? "• Online" : "• Offline"}
                         </div>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                );
-              })()}
+                        <div className="flex items-center gap-2">
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button size="sm" variant="outline">Track Location</Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-3xl">
+                              <DialogHeader>
+                                <DialogTitle>Staff Live Location</DialogTitle>
+                              </DialogHeader>
+                              <div className="rounded-lg overflow-hidden">
+                                <MapContainer center={[Number(live!.lat), Number(live!.lng)] as [number, number]} zoom={14} style={{ height: 380 }} scrollWheelZoom>
+                                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                  <Marker position={[Number(live!.lat), Number(live!.lng)] as [number, number]} />
+                                  {b.location?.lat !== undefined && b.location?.lng !== undefined && (
+                                    <Marker position={[Number(b.location.lat), Number(b.location.lng)] as [number, number]} />
+                                  )}
+                                </MapContainer>
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {`Updated: ${live?.updatedAt || "-"}`}
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button size="icon" variant="outline" aria-label="View Images">
+                                <ImageIcon className="h-4 w-4" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-4xl">
+                              <DialogHeader>
+                                <DialogTitle>Service Images</DialogTitle>
+                              </DialogHeader>
+                              {(() => {
+                                const hasMedia =
+                                  (Array.isArray(b.photosBefore) && b.photosBefore.length > 0) ||
+                                  (Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0) ||
+                                  (Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0) ||
+                                  (Array.isArray(b.photosReturn) && b.photosReturn.length > 0);
+                                if (!hasMedia) {
+                                  return <div className="text-sm text-muted-foreground">No images uploaded yet.</div>;
+                                }
+                                return (
+                                  <div className="space-y-4">
+                                    {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
+                                      <div>
+                                        <div className="text-xs text-muted-foreground mb-2">Before Pickup</div>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                          {b.photosBefore.map((src, i) => (
+                                            <img key={`tl-g-b-${i}`} src={src} alt="Before" className="w-full h-28 object-cover rounded border" />
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
+                                      <div>
+                                        <div className="text-xs text-muted-foreground mb-2">Before Service</div>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                          {b.beforeServicePhotos.map((src, i) => (
+                                            <img key={`tl-g-a-${i}`} src={src} alt="After" className="w-full h-28 object-cover rounded border" />
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
+                                      <div>
+                                        <div className="text-xs text-muted-foreground mb-2">After Service</div>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                          {b.afterServicePhotos.map((src, i) => (
+                                            <img key={`tl-g-r-${i}`} src={src} alt="Return" className="w-full h-28 object-cover rounded border" />
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {(() => {
+                    const hasMedia =
+                      (Array.isArray(b.photosBefore) && b.photosBefore.length > 0) ||
+                      (Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0) ||
+                      (Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0) ||
+                      (Array.isArray(b.photosReturn) && b.photosReturn.length > 0);
+                    if (!hasMedia) return null;
+                    return (
+                      <div className="flex items-center justify-end pt-2">
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button size="sm" variant="outline">View Gallery</Button>
+                          </DialogTrigger>
+                          <DialogContent className="max-w-4xl">
+                            <DialogHeader>
+                              <DialogTitle>Service Gallery</DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                              {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
+                                <div>
+                                  <div className="text-xs text-muted-foreground mb-2">Before Pickup</div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                    {b.photosBefore.map((src, i) => (
+                                      <img key={`g-bp-${i}`} src={src} alt="Before pickup" className="w-full h-28 object-cover rounded border" />
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
+                                <div>
+                                  <div className="text-xs text-muted-foreground mb-2">Before Service</div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                    {b.beforeServicePhotos.map((src, i) => (
+                                      <img key={`g-bs-${i}`} src={src} alt="Before service" className="w-full h-28 object-cover rounded border" />
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
+                                <div>
+                                  <div className="text-xs text-muted-foreground mb-2">After Service</div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                    {b.afterServicePhotos.map((src, i) => (
+                                      <img key={`g-as-${i}`} src={src} alt="After service" className="w-full h-28 object-cover rounded border" />
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {Array.isArray(b.photosReturn) && b.photosReturn.length > 0 && (
+                                <div>
+                                  <div className="text-xs text-muted-foreground mb-2">Return</div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                    {b.photosReturn.map((src, i) => (
+                                      <img key={`g-r-${i}`} src={src} alt="Return" className="w-full h-28 object-cover rounded border" />
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
             </div>

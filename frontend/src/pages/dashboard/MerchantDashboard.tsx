@@ -269,57 +269,57 @@ const MerchantDashboard = () => {
                       const due = Math.max(bill - paid, 0);
                       return <div className="text-xs text-muted-foreground">Paid: ₹{paid.toLocaleString("en-IN")} {bill ? `• Due: ₹${due.toLocaleString("en-IN")}` : ""}</div>;
                     })()}
-                  {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
-                    <div className="mt-2">
-                      <div className="text-xs text-muted-foreground mb-1">Before Pickup</div>
-                      <div className="flex flex-wrap gap-2">
-                        {b.photosBefore.slice(0, 4).map((src, i) => (
-                          <Dialog key={`bp-${i}`}>
-                            <DialogTrigger asChild>
-                              <img src={src} alt="Before pickup" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
-                            </DialogTrigger>
-                            <DialogContent className="max-w-3xl p-0">
-                              <img src={src} alt="Before pickup full" className="w-full h-auto rounded" />
-                            </DialogContent>
-                          </Dialog>
-                        ))}
+                    {Array.isArray(b.photosBefore) && b.photosBefore.length > 0 && (
+                      <div className="mt-2">
+                        <div className="text-xs text-muted-foreground mb-1">Before Pickup</div>
+                        <div className="flex flex-wrap gap-2">
+                          {b.photosBefore.slice(0, 4).map((src, i) => (
+                            <Dialog key={`bp-${i}`}>
+                              <DialogTrigger asChild>
+                                <img src={src} alt="Before pickup" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
+                              </DialogTrigger>
+                              <DialogContent className="max-w-3xl p-0">
+                                <img src={src} alt="Before pickup full" className="w-full h-auto rounded" />
+                              </DialogContent>
+                            </Dialog>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
-                    <div className="mt-2">
-                      <div className="text-xs text-muted-foreground mb-1">Before Service</div>
-                      <div className="flex flex-wrap gap-2">
-                        {b.beforeServicePhotos.slice(0, 4).map((src, i) => (
-                          <Dialog key={`bs-${i}`}>
-                            <DialogTrigger asChild>
-                              <img src={src} alt="Before service" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
-                            </DialogTrigger>
-                            <DialogContent className="max-w-3xl p-0">
-                              <img src={src} alt="Before service full" className="w-full h-auto rounded" />
-                            </DialogContent>
-                          </Dialog>
-                        ))}
+                    )}
+                    {Array.isArray(b.beforeServicePhotos) && b.beforeServicePhotos.length > 0 && (
+                      <div className="mt-2">
+                        <div className="text-xs text-muted-foreground mb-1">Before Service</div>
+                        <div className="flex flex-wrap gap-2">
+                          {b.beforeServicePhotos.slice(0, 4).map((src, i) => (
+                            <Dialog key={`bs-${i}`}>
+                              <DialogTrigger asChild>
+                                <img src={src} alt="Before service" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
+                              </DialogTrigger>
+                              <DialogContent className="max-w-3xl p-0">
+                                <img src={src} alt="Before service full" className="w-full h-auto rounded" />
+                              </DialogContent>
+                            </Dialog>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
-                    <div className="mt-2">
-                      <div className="text-xs text-muted-foreground mb-1">After Service</div>
-                      <div className="flex flex-wrap gap-2">
-                        {b.afterServicePhotos.slice(0, 4).map((src, i) => (
-                          <Dialog key={`as-${i}`}>
-                            <DialogTrigger asChild>
-                              <img src={src} alt="After service" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
-                            </DialogTrigger>
-                            <DialogContent className="max-w-3xl p-0">
-                              <img src={src} alt="After service full" className="w-full h-auto rounded" />
-                            </DialogContent>
-                          </Dialog>
-                        ))}
+                    )}
+                    {Array.isArray(b.afterServicePhotos) && b.afterServicePhotos.length > 0 && (
+                      <div className="mt-2">
+                        <div className="text-xs text-muted-foreground mb-1">After Service</div>
+                        <div className="flex flex-wrap gap-2">
+                          {b.afterServicePhotos.slice(0, 4).map((src, i) => (
+                            <Dialog key={`as-${i}`}>
+                              <DialogTrigger asChild>
+                                <img src={src} alt="After service" className="h-12 w-12 rounded object-cover border cursor-zoom-in" />
+                              </DialogTrigger>
+                              <DialogContent className="max-w-3xl p-0">
+                                <img src={src} alt="After service full" className="w-full h-auto rounded" />
+                              </DialogContent>
+                            </Dialog>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
                     {typeof b.estimateTotal === "number" && (
                       <div className="text-xs text-muted-foreground">
                         Estimate: ₹{(b.estimateLabour || 0)} + ₹{(b.estimateParts || 0)} + ₹{(b.estimateAdditional || 0)} = ₹{b.estimateTotal}
@@ -637,14 +637,14 @@ const MerchantDashboard = () => {
                                 <Button
                                   size="sm"
                                   onClick={() => {
-                                    const rows = [["amount","method","reference","byRole","time"], ...(b.payments || []).map(p => [
+                                    const rows = [["amount", "method", "reference", "byRole", "time"], ...(b.payments || []).map(p => [
                                       String(p.amount ?? ""),
                                       String(p.method ?? ""),
                                       String(p.reference ?? ""),
                                       String(p.byRole ?? ""),
                                       p.time ? new Date(p.time).toISOString() : ""
                                     ])];
-                                    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+                                    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
                                     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
                                     const url = URL.createObjectURL(blob);
                                     const a = document.createElement("a");
@@ -743,7 +743,7 @@ const MerchantDashboard = () => {
           </motion.div>
         )}
 
-        
+
         {tab === "earnings" && (
           <motion.div {...fadeUp} transition={{ delay: 0.2 }} className="rounded-xl border bg-card p-6 shadow-card">
             <h2 className="font-heading text-xl font-bold">Earnings</h2>

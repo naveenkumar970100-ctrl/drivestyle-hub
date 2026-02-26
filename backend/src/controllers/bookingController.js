@@ -230,10 +230,10 @@ const patchBooking = async (req, res, next) => {
       const hasLat = typeof loc.lat === 'number' && !isNaN(loc.lat);
       const hasLng = typeof loc.lng === 'number' && !isNaN(loc.lng);
       // Stricter address check: must be longer than 3 chars and not just "-"
-      const hasAddr = typeof loc.formatted === 'string' && 
-                      loc.formatted.trim().length > 0 && 
-                      loc.formatted.trim() !== '-';
-      
+      const hasAddr = typeof loc.formatted === 'string' &&
+        loc.formatted.trim().length > 0 &&
+        loc.formatted.trim() !== '-';
+
       const isPickup = hasLat || hasLng || hasAddr;
 
       if (!doc.merchantId || (isPickup && !doc.staffId)) {
@@ -340,7 +340,7 @@ const patchBooking = async (req, res, next) => {
       if (!doc.dropAt) doc.dropAt = new Date();
       try {
         if (req.user?.id) doc.dropByStaffId = new mongoose.Types.ObjectId(req.user.id);
-      } catch {}
+      } catch { }
       setAudit('staff', 'dropped vehicle at service centre');
     } else if (action === 'merchant_update_estimate') {
       doc.estimateLabour = Number(req.body.labour_cost || 0);
@@ -425,7 +425,7 @@ const patchBooking = async (req, res, next) => {
       if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ message: 'amount required' });
       const byRole = req.user?.role ? String(req.user.role).toLowerCase() : 'system';
       let byUserId = undefined;
-      try { if (req.user?.id) byUserId = new mongoose.Types.ObjectId(String(req.user.id)); } catch {}
+      try { if (req.user?.id) byUserId = new mongoose.Types.ObjectId(String(req.user.id)); } catch { }
       const entry = { amount, method, reference, byRole, byUserId, time: new Date() };
       doc.payments = Array.isArray(doc.payments) ? [...doc.payments, entry] : [entry];
       setAudit(byRole, `recorded payment ${amount}${method ? ' via ' + method : ''}`);

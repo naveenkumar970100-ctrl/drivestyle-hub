@@ -275,9 +275,9 @@ export async function createAdminUser(input: CreateStaffInput | CreateMerchantIn
       }
       const msg =
         typeof data === "object" &&
-        data !== null &&
-        "message" in data &&
-        typeof (data as { message: unknown }).message === "string"
+          data !== null &&
+          "message" in data &&
+          typeof (data as { message: unknown }).message === "string"
           ? ((data as { message: string }).message || "").trim()
           : "";
       lastError = msg.length > 0 ? msg : `HTTP ${res.status}${parsed ? "" : " (invalid JSON)"}`;
@@ -339,10 +339,10 @@ export async function listUsersFromApi(): Promise<ApiUser[]> {
               staffOnline: typeof r.staffOnline === "boolean" ? (r.staffOnline as boolean) : undefined,
               liveLocation: r.liveLocation && typeof r.liveLocation === "object"
                 ? {
-                    lat: (r.liveLocation as Record<string, unknown>).lat as number | undefined,
-                    lng: (r.liveLocation as Record<string, unknown>).lng as number | undefined,
-                    updatedAt: (r.liveLocation as Record<string, unknown>).updatedAt ? String((r.liveLocation as Record<string, unknown>).updatedAt) : undefined,
-                  }
+                  lat: (r.liveLocation as Record<string, unknown>).lat as number | undefined,
+                  lng: (r.liveLocation as Record<string, unknown>).lng as number | undefined,
+                  updatedAt: (r.liveLocation as Record<string, unknown>).updatedAt ? String((r.liveLocation as Record<string, unknown>).updatedAt) : undefined,
+                }
                 : undefined,
             };
           });
@@ -408,10 +408,10 @@ export async function getCurrentUserFromApi(): Promise<ApiUser | null> {
             staffOnline: typeof r.staffOnline === "boolean" ? (r.staffOnline as boolean) : undefined,
             liveLocation: r.liveLocation && typeof r.liveLocation === "object"
               ? {
-                  lat: (r.liveLocation as Record<string, unknown>).lat as number | undefined,
-                  lng: (r.liveLocation as Record<string, unknown>).lng as number | undefined,
-                  updatedAt: (r.liveLocation as Record<string, unknown>).updatedAt ? String((r.liveLocation as Record<string, unknown>).updatedAt) : undefined,
-                }
+                lat: (r.liveLocation as Record<string, unknown>).lat as number | undefined,
+                lng: (r.liveLocation as Record<string, unknown>).lng as number | undefined,
+                updatedAt: (r.liveLocation as Record<string, unknown>).updatedAt ? String((r.liveLocation as Record<string, unknown>).updatedAt) : undefined,
+              }
               : undefined,
           };
         }
@@ -724,27 +724,27 @@ export async function listApiBookings(params?: { email?: string; limit?: number 
                 : merchantVal && typeof (merchantVal as { toString?: () => string }).toString === "function"
                   ? String((merchantVal as { toString: () => string }).toString())
                   : (merchantVal && typeof (merchantVal as Record<string, unknown>)._id === "string"
-                      ? ((merchantVal as Record<string, unknown>)._id as string)
-                      : undefined);
+                    ? ((merchantVal as Record<string, unknown>)._id as string)
+                    : undefined);
             const staffId =
               typeof staffVal === "string"
                 ? staffVal
                 : staffVal && typeof (staffVal as { toString?: () => string }).toString === "function"
                   ? String((staffVal as { toString: () => string }).toString())
                   : (staffVal && typeof (staffVal as Record<string, unknown>)._id === "string"
-                      ? ((staffVal as Record<string, unknown>)._id as string)
-                      : undefined);
+                    ? ((staffVal as Record<string, unknown>)._id as string)
+                    : undefined);
             const payments = Array.isArray((r as Record<string, unknown>).payments)
               ? ((r as Record<string, unknown>).payments as unknown[]).map((p) => {
-                  const q = p as Record<string, unknown>;
-                  return {
-                    amount: typeof q.amount === "number" ? (q.amount as number) : undefined,
-                    method: typeof q.method === "string" ? (q.method as string) : undefined,
-                    reference: typeof q.reference === "string" ? (q.reference as string) : undefined,
-                    byRole: typeof q.byRole === "string" ? (q.byRole as string) : undefined,
-                    time: q.time ? String(q.time) : undefined,
-                  };
-                })
+                const q = p as Record<string, unknown>;
+                return {
+                  amount: typeof q.amount === "number" ? (q.amount as number) : undefined,
+                  method: typeof q.method === "string" ? (q.method as string) : undefined,
+                  reference: typeof q.reference === "string" ? (q.reference as string) : undefined,
+                  byRole: typeof q.byRole === "string" ? (q.byRole as string) : undefined,
+                  time: q.time ? String(q.time) : undefined,
+                };
+              })
               : undefined;
             return {
               id: String((r.id ?? r._id ?? "")),
@@ -819,9 +819,9 @@ export async function listApiBookings(params?: { email?: string; limit?: number 
               lastUpdatedAt: r.lastUpdatedAt ? String(r.lastUpdatedAt) : undefined,
               staffAcceptanceStatus:
                 typeof r.staffAcceptanceStatus === "string" &&
-                (["none", "pending", "accepted", "declined"] as const).includes(
-                  String(r.staffAcceptanceStatus) as "none" | "pending" | "accepted" | "declined"
-                )
+                  (["none", "pending", "accepted", "declined"] as const).includes(
+                    String(r.staffAcceptanceStatus) as "none" | "pending" | "accepted" | "declined"
+                  )
                   ? (String(r.staffAcceptanceStatus) as "none" | "pending" | "accepted" | "declined")
                   : undefined,
               payments,
