@@ -1,34 +1,8 @@
 const mongoose = require('mongoose');
-const fs = require('fs');
-const path = require('path');
 const { Booking } = require('../models/Booking');
 const { User } = require('../models/User');
 
 const isDbConnected = () => (mongoose.connection?.readyState || 0) === 1;
-
-const dataDir = path.join(__dirname, '..', 'data');
-const bookingsFile = path.join(dataDir, 'bookings.json');
-
-function readOfflineBookings() {
-  try {
-    const raw = fs.readFileSync(bookingsFile, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed;
-    return [];
-  } catch {
-    return [];
-  }
-}
-
-function writeOfflineBookings(list) {
-  try {
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
-    fs.writeFileSync(bookingsFile, JSON.stringify(list, null, 2), 'utf8');
-  } catch {
-  }
-}
 
 const createBooking = async (req, res, next) => {
   try {
@@ -49,18 +23,9 @@ const createBooking = async (req, res, next) => {
       price: Number(req.body.price || 0),
       status: 'PENDING_ASSIGNMENT',
     };
-    if (connected) {
-      const doc = await Booking.create(payload);
-      // Removed offline update to ensure MongoDB is the single source of truth for payment/revenue flows
-      return res.status(201).json({ booking: { id: doc._id } });
-    } else {
-      const offline = readOfflineBookings();
-      const id = new mongoose.Types.ObjectId().toString();
-      const now = new Date();
-      offline.push({ ...payload, _id: id, createdAt: now, updatedAt: now });
-      writeOfflineBookings(offline);
-      res.status(201).json({ booking: { id } });
-    }
+    if (!connected) return res.status(503).json({ message: 'Database not connected' });
+    const doc = await Booking.create(payload);
+    return res.status(201).json({ booking: { id: doc._id } });
   } catch (err) {
     next(err);
   }
@@ -69,39 +34,52 @@ const createBooking = async (req, res, next) => {
 const listBookings = async (req, res, next) => {
   try {
     const connected = isDbConnected();
-    const inProd = (process.env.NODE_ENV || 'development') === 'production';
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const skip = (page - 1) * limit;
     const scope = (req.query.scope || '').toString();
 
-    if (!connected) {
-      const offlineBookings = readOfflineBookings().slice(skip, skip + limit);
-      return res.json({ bookings: offlineBookings });
-    }
+    if (!connected) return res.status(503).json({ message: 'Database not connected' });
 
     const roleStr = (req.user?.role || req.query.role || 'admin').toLowerCase();
-    const email = (req.query.email || '').toLowerCase();
+    const email = (req.query.email || '').toString().trim().toLowerCase();
     let filter = {};
+
+    // if an explicit id query parameter is provided, restrict to that booking
+    if (req.query.id) {
+      try {
+        filter._id = new mongoose.Types.ObjectId(String(req.query.id));
+      } catch { /* ignore invalid id */ }
+    }
 
     if (scope === 'available') {
       filter.status = 'PENDING_ASSIGNMENT';
     } else if (roleStr === 'customer' && email) {
-      filter.customerEmail = email;
+      // Email is already normalized to lowercase in schema, use direct equality
+      filter.customerEmail = email.toLowerCase().trim();
     } else if (roleStr === 'merchant') {
       let merchantId = req.user?.id;
       if (!merchantId && email) {
         const u = await User.findOne({ email }).select('_id role').lean();
         if (u?.role?.toLowerCase() === 'merchant') merchantId = u._id.toString();
       }
-      if (merchantId) filter.merchantId = merchantId;
+      if (merchantId) {
+        filter = { $or: [{ merchantId }, { status: 'PENDING_ASSIGNMENT' }] };
+      } else {
+        // Show available when merchant is unknown (dev mode without auth)
+        filter = { status: 'PENDING_ASSIGNMENT' };
+      }
     } else if (roleStr === 'staff') {
       let staffId = req.user?.id;
       if (!staffId && email) {
         const u = await User.findOne({ email }).select('_id role').lean();
         if (u?.role?.toLowerCase() === 'staff') staffId = u._id.toString();
       }
-      if (staffId) filter.staffId = staffId;
+      if (staffId) {
+        filter = { $or: [{ staffId }, { status: 'PENDING_ASSIGNMENT' }] };
+      } else {
+        filter = { status: 'PENDING_ASSIGNMENT' };
+      }
     }
 
     let bookings = await Booking.find(filter)
@@ -111,13 +89,6 @@ const listBookings = async (req, res, next) => {
       .lean();
 
     let total = await Booking.countDocuments(filter);
-
-    // Skip offline fallback if connected to prioritize MongoDB data consistency
-    /*
-    if (!inProd && connected && bookings.length === 0 && page === 1) {
-    ...
-    }
-    */
 
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.set('Pragma', 'no-cache');
@@ -429,12 +400,27 @@ const patchBooking = async (req, res, next) => {
       const entry = { amount, method, reference, byRole, byUserId, time: new Date() };
       doc.payments = Array.isArray(doc.payments) ? [...doc.payments, entry] : [entry];
       setAudit(byRole, `recorded payment ${amount}${method ? ' via ' + method : ''}`);
+      // auto-transition if fully paid and ready for delivery
+      const totalPaid = (doc.payments || []).reduce((s, p) => s + (Number(p.amount || 0) || 0), 0);
+      const bill = typeof doc.billTotal === 'number' ? doc.billTotal : (typeof doc.estimateTotal === 'number' ? doc.estimateTotal : 0);
+      if (totalPaid >= bill) {
+        const next = 'DELIVERED';
+        if (canTransition(doc.status, next)) {
+          doc.status = next;
+          setAudit(byRole, 'auto status to delivered after payment');
+        }
+      }
     } else if (action === 'booking_rate') {
       const rating = Number(req.body.rating || 0);
       const comment = (req.body.comment || '').toString();
       doc.ratingValue = rating;
       doc.ratingComment = comment;
       setAudit('customer', 'rated service');
+    } else if (action === 'update_vehicle') {
+      const vehicle = (req.body.vehicle || '').toString().toLowerCase();
+      if (!['car', 'bike'].includes(vehicle)) return res.status(400).json({ message: 'vehicle must be car or bike' });
+      doc.vehicle = vehicle;
+      setAudit('staff', `updated vehicle to ${vehicle}`);
     } else {
       return res.status(400).json({ message: 'Unknown action' });
     }

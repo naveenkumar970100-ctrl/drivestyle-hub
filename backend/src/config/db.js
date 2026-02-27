@@ -4,8 +4,8 @@ const { config } = require('./env');
 
 const connectDB = async () => {
   if (!config.MONGO_URI) {
-    console.warn('MONGO_URI not set. Skipping DB connection; using in-memory operations only.');
-    return;
+    console.error('MONGO_URI not set. Aborting startup because MongoDB is required.');
+    process.exit(1);
   }
   try {
     if (config.MONGO_DNS_SERVERS) {

@@ -27,6 +27,17 @@ const MerchantDashboard = () => {
   const [bookings, setBookings] = useState<ApiBooking[]>([]);
   const [users, setUsers] = useState<ApiUser[]>([]);
   const [mstats, setMstats] = useState<{ activeServices: number; totalBookings: number; earnings: number; ratingAvg: number | null } | null>(null);
+  function updateBookingLocal(id: string, patch: Partial<ApiBooking>) {
+    setBookings((prev) => prev.map((bk) => (bk.id === id ? { ...bk, ...patch } : bk)));
+  }
+  async function refreshOne(id: string) {
+    try {
+      const arr = await listApiBookings({ id, limit: 1 });
+      if (arr.length) updateBookingLocal(id, arr[0]);
+    } catch {
+      // ignore
+    }
+  }
   const tab = (() => {
     const p = new URLSearchParams(search);
     const t = p.get("tab");
@@ -139,7 +150,7 @@ const MerchantDashboard = () => {
       } catch (_e) {
         void 0;
       }
-    }, 10000);
+    }, 30000);
     return () => clearInterval(id);
   }, []);
   const myBookings = useMemo(() => {
@@ -374,8 +385,7 @@ const MerchantDashboard = () => {
                             media.push(await toDataUrl(f));
                           }
                           await patchBookingApi(b.id, { action: "merchant_upload_before_service_media", beforeServicePhotos: media });
-                          const next = await listApiBookings({ limit: 100 });
-                          setBookings(next);
+                          await refreshOne(b.id);
                           toast({ title: "Before service images uploaded", description: b.customerEmail });
                         } catch (err) {
                           const message = err instanceof Error ? err.message : String(err);
@@ -400,8 +410,7 @@ const MerchantDashboard = () => {
                             media.push(await toDataUrl(f));
                           }
                           await patchBookingApi(b.id, { action: "merchant_upload_after_service_media", afterServicePhotos: media });
-                          const next = await listApiBookings({ limit: 100 });
-                          setBookings(next);
+                          await refreshOne(b.id);
                           toast({ title: "After service images uploaded", description: b.customerEmail });
                         } catch (err) {
                           const message = err instanceof Error ? err.message : String(err);
@@ -525,8 +534,7 @@ const MerchantDashboard = () => {
                             value={String(b.staffId || "")}
                             onValueChange={async (v) => {
                               await patchBookingApi(b.id, { action: "assign_staff", staffId: v });
-                              const list = await listApiBookings({ limit: 100 });
-                              setBookings(list);
+                              await refreshOne(b.id);
                               addNotificationForUser(v, "New Task", `Booking assigned: ${b.service}`);
                               toast({ title: "Staff assigned", description: v });
                             }}
@@ -548,8 +556,7 @@ const MerchantDashboard = () => {
                         const parts = Number(window.prompt("Parts cost", "0") || "0");
                         const additional = Number(window.prompt("Additional work", "0") || "0");
                         await patchBookingApi(b.id, { action: "merchant_update_estimate", labour_cost: labour, parts_cost: parts, additional_work: additional });
-                        const list = await listApiBookings({ limit: 100 });
-                        setBookings(list);
+                        await refreshOne(b.id);
                         toast({ title: "Estimate updated" });
                       }}
                     >
@@ -587,8 +594,7 @@ const MerchantDashboard = () => {
                               if (!amount || amount <= 0) { toast({ title: "Amount required", variant: "destructive" }); return; }
                               try {
                                 await patchBookingApi(b.id, { action: "add_payment", amount, method, reference });
-                                const next = await listApiBookings({ limit: 100 });
-                                setBookings(next);
+                                await refreshOne(b.id);
                                 toast({ title: "Payment recorded", description: `${b.customerEmail} • ₹${amount}` });
                               } catch (err) {
                                 const message = err instanceof Error ? err.message : String(err);
@@ -673,8 +679,7 @@ const MerchantDashboard = () => {
                         className="rounded-md border px-3 py-1 text-sm"
                         onClick={async () => {
                           await patchBookingApi(b.id, { action: "merchant_complete_service" });
-                          const list = await listApiBookings({ limit: 100 });
-                          setBookings(list);
+                          await refreshOne(b.id);
                           toast({ title: "Service completed" });
                         }}
                       >
@@ -690,8 +695,7 @@ const MerchantDashboard = () => {
                         const file_url = String(window.prompt("Bill file URL", "") || "");
                         const breakdown = String(window.prompt("Breakdown", "") || "");
                         await patchBookingApi(b.id, { action: "merchant_upload_bill", invoice_number, gst, total, file_url, breakdown });
-                        const list = await listApiBookings({ limit: 100 });
-                        setBookings(list);
+                        await refreshOne(b.id);
                         toast({ title: "Bill uploaded" });
                       }}
                     >
@@ -727,8 +731,7 @@ const MerchantDashboard = () => {
                               return;
                             }
                             await patchBookingApi(b.id, { action: "assign_merchant", merchantId: me.id });
-                            const list = await listApiBookings({ limit: 100 });
-                            setBookings(list);
+                            await refreshOne(b.id);
                             toast({ title: "Booking claimed" });
                           }}
                         >

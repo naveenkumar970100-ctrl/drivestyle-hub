@@ -612,7 +612,7 @@ export async function createBookingApi(input: { customerEmail: string; customerP
 type BookingsCacheEntry = { key: string; at: number; value: ApiBooking[] };
 let bookingsCache: BookingsCacheEntry | null = null;
 let bookingsCachePromise: { key: string; promise: Promise<ApiBooking[]> } | null = null;
-const BOOKINGS_TTL_MS = 5000;
+const BOOKINGS_TTL_MS = 0;
 const BOOKINGS_STORAGE_KEY = "bookings_api_cache_v1";
 
 function loadBookingsCacheFromStorage(expectedKey: string) {
@@ -670,11 +670,13 @@ export function getCachedApiBookings(params?: { email?: string; limit?: number }
   return [];
 }
 
-export async function listApiBookings(params?: { email?: string; limit?: number }): Promise<ApiBooking[]> {
+export async function listApiBookings(params?: { id?: string; email?: string; limit?: number }): Promise<ApiBooking[]> {
   const qs = new URLSearchParams();
   const session = getAuth();
+  const id = params?.id;
+  if (id) qs.set("id", id);
   const email = params?.email || session?.email;
-  if (email) qs.set("email", email);
+  if (email) qs.set("email", email.toLowerCase());
   if (session?.role) qs.set("role", session.role);
   const lim = params?.limit;
   if (typeof lim === "number" && Number.isFinite(lim) && lim > 0) {
@@ -688,7 +690,7 @@ export async function listApiBookings(params?: { email?: string; limit?: number 
   if (!bookingsCache) {
     loadBookingsCacheFromStorage(key);
   }
-  if (bookingsCache && bookingsCache.key === key && now - bookingsCache.at < BOOKINGS_TTL_MS) {
+  if (BOOKINGS_TTL_MS > 0 && bookingsCache && bookingsCache.key === key && now - bookingsCache.at < BOOKINGS_TTL_MS) {
     return bookingsCache.value;
   }
   if (bookingsCachePromise && bookingsCachePromise.key === key) {

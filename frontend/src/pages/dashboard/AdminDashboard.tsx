@@ -366,7 +366,7 @@ const AdminDashboard = () => {
           );
           await Promise.all(tasks);
         } catch { void 0; }
-      }, 10000);
+      }, 30000);
     }
     return () => {
       if (timer) window.clearInterval(timer);

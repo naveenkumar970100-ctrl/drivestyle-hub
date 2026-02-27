@@ -73,7 +73,7 @@ const StaffDashboard = () => {
       } catch (_e) {
         void 0;
       }
-    }, 10000);
+    }, 30000);
     return () => clearInterval(id);
   }, []);
   useEffect(() => {
@@ -158,8 +158,7 @@ const StaffDashboard = () => {
   async function logCall(b: ApiBooking) {
     try {
       await patchBookingApi(b.id, { action: "staff_update_wear_tear", wearTear: `CALL ${new Date().toISOString()}` });
-      const next = await listApiBookings({ limit: 100 });
-      setBookings(next);
+      await refreshOne(b.id);
       toast({ title: "Call logged", description: b.customerEmail });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -169,6 +168,14 @@ const StaffDashboard = () => {
   function updateBookingLocal(id: string, patch: Partial<ApiBooking>) {
     setBookings((prev) => prev.map((bk) => (bk.id === id ? { ...bk, ...patch } : bk)));
   }
+  async function refreshOne(id: string) {
+    try {
+      const arr = await listApiBookings({ id, limit: 1 });
+      if (arr.length) updateBookingLocal(id, arr[0]);
+    } catch {
+      // ignore refresh errors
+    }
+  }
   async function uploadBefore(b: ApiBooking, picked?: File) {
     const file = picked || beforeFile;
     if (!file) { toast({ title: "Upload required", description: "Choose an image file", variant: "destructive" }); return; }
@@ -176,8 +183,7 @@ const StaffDashboard = () => {
     setSaving(true);
     try {
       await patchBookingApi(b.id, { action: "staff_upload_before_media", photosBefore: [media] });
-      const next = await listApiBookings({ limit: 100 });
-      setBookings(next);
+      await refreshOne(b.id);
       setBeforeFile(null);
       toast({ title: "Before media uploaded", description: b.customerEmail });
     } catch (err) {
@@ -191,8 +197,7 @@ const StaffDashboard = () => {
     setSaving(true);
     try {
       await patchBookingApi(b.id, { action: "staff_start" });
-      const next = await listApiBookings({ limit: 100 });
-      setBookings(next);
+      await refreshOne(b.id);
       toast({ title: "Pickup confirmed", description: b.customerEmail });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -205,8 +210,7 @@ const StaffDashboard = () => {
     setSaving(true);
     try {
       await patchBookingApi(b.id, { action: "staff_in_transit" });
-      const next = await listApiBookings({ limit: 100 });
-      setBookings(next);
+      await refreshOne(b.id);
       toast({ title: "In transit", description: b.customerEmail });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -224,8 +228,7 @@ const StaffDashboard = () => {
       }
       try { await patchBookingApi(b.id, { action: "staff_in_transit" }); } catch { /* ignore invalid transition */ }
       try { await patchBookingApi(b.id, { action: "staff_handover" }); } catch { /* ignore if already at centre */ }
-      const next = await listApiBookings({ limit: 100 });
-      setBookings(next);
+      await refreshOne(b.id);
       toast({ title: "Reached merchant location", description: b.customerEmail });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -238,8 +241,7 @@ const StaffDashboard = () => {
     setSaving(true);
     try {
       await patchBookingApi(b.id, { action: "staff_drop_vehicle" });
-      const next = await listApiBookings({ limit: 100 });
-      setBookings(next);
+      await refreshOne(b.id);
       if (b.merchantId) {
         addNotificationForUser(b.merchantId, "Vehicle Dropped", `Vehicle dropped at service centre for ${b.service}`);
       }
@@ -258,8 +260,7 @@ const StaffDashboard = () => {
     setSaving(true);
     try {
       await patchBookingApi(b.id, { action: "staff_upload_return_media", photosReturn: [media] });
-      const next = await listApiBookings({ limit: 100 });
-      setBookings(next);
+      await refreshOne(b.id);
       setReturnFile(null);
       toast({ title: "Return media uploaded", description: b.customerEmail });
     } catch (err) {
@@ -274,8 +275,7 @@ const StaffDashboard = () => {
     setSaving(true);
     try {
       await patchBookingApi(b.id, { action: "staff_update_wear_tear", wearTear: text });
-      const next = await listApiBookings({ limit: 100 });
-      setBookings(next);
+      await refreshOne(b.id);
       toast({ title: "Wear & tear updated", description: b.customerEmail });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -295,8 +295,7 @@ const StaffDashboard = () => {
       } else {
         toast({ title: "Cannot confirm payment", description: `Status: ${b.status}`, variant: "destructive" });
       }
-      const next = await listApiBookings({ limit: 100 });
-      setBookings(next);
+      await refreshOne(b.id);
       toast({ title: "Payment verified", description: b.customerEmail });
       navigate("/dashboard/staff?tab=my-tasks");
     } catch (err) {
@@ -607,8 +606,7 @@ const StaffDashboard = () => {
                               setSaving(true);
                               try {
                                 await patchBookingApi(t.id, { action: "staff_accept" });
-                            const list = await listApiBookings({ limit: 100 });
-                                setBookings(list);
+                                await refreshOne(t.id);
                                 toast({ title: "Accepted", description: t.customerEmail });
                               } catch (e) {
                                 const msg = e instanceof Error ? e.message : String(e);
@@ -628,8 +626,7 @@ const StaffDashboard = () => {
                               setSaving(true);
                               try {
                                 await patchBookingApi(t.id, { action: "staff_decline" });
-                            const list = await listApiBookings({ limit: 100 });
-                                setBookings(list);
+                                await refreshOne(t.id);
                                 toast({ title: "Declined", description: t.customerEmail });
                               } catch (e) {
                                 const msg = e instanceof Error ? e.message : String(e);
@@ -693,8 +690,7 @@ const StaffDashboard = () => {
                         onClick={async () => {
                           if (!me?.id) return;
                           await patchBookingApi(t.id, { action: "assign_staff", staffId: me.id });
-                          const list = await listApiBookings({ limit: 100 });
-                          setBookings(list);
+                          await refreshOne(t.id);
                           toast({ title: "Task claimed" });
                         }}
                       disabled={!online}
@@ -785,7 +781,29 @@ const StaffDashboard = () => {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <div className="text-sm">Type: {t.service}</div>
-                    <div className="text-sm">Vehicle: {t.vehicle === "bike" ? "Bike" : "Car"}</div>
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium">Vehicle</label>
+                      <Select value={t.vehicle || "car"} onValueChange={async (val) => {
+                        try {
+                          setSaving(true);
+                          await patchBookingApi(t.id, { action: "update_vehicle", vehicle: val });
+                          await refreshOne(t.id);
+                          toast({ title: "Vehicle updated", description: `Changed to ${val === "bike" ? "Bike" : "Car"}` });
+                        } catch (err) {
+                          toast({ title: "Error", description: "Failed to update vehicle", variant: "destructive" });
+                        } finally {
+                          setSaving(false);
+                        }
+                      }}>
+                        <SelectTrigger className="w-full" disabled={saving}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="car">Car</SelectItem>
+                          <SelectItem value="bike">Bike</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="text-sm">Registration: {t.registration || "-"}</div>
                     <div className="text-sm">Customer: {t.customerEmail}</div>
                     <div className="text-sm">Status: {String(t.status).toUpperCase()}</div>

@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { useEffect, useState, useMemo } from "react";
-import { getAuth, setAuth, listCustomerVehiclesFromApi, createCustomerVehicleApi, deleteCustomerVehicleFromApi, fetchVehicleDetails, listApiBookings, createBookingApi, listInvoices, downloadInvoice, listUsersFromApi, updateMyProfileApi, getCurrentUserFromApi, patchBookingApi, listServicesApi, type CustomerVehicle, type VehicleType, type ApiBooking, type Invoice, type ApiUser, type ServiceItem } from "@/lib/utils";
+import { getAuth, setAuth, listCustomerVehiclesFromApi, createCustomerVehicleApi, deleteCustomerVehicleFromApi, fetchVehicleDetails, listApiBookings, createBookingApi, listInvoices, downloadInvoice, listUsersFromApi, updateMyProfileApi, getCurrentUserFromApi, patchBookingApi, listServicesApi, addNotificationForUser, type CustomerVehicle, type VehicleType, type ApiBooking, type Invoice, type ApiUser, type ServiceItem } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -57,6 +57,11 @@ const CustomerDashboard = () => {
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [reviewRating, setReviewRating] = useState<number>(5);
   const [reviewComment, setReviewComment] = useState<string>("");
+  const [paymentBookingId, setPaymentBookingId] = useState<string | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [paymentMethod, setPaymentMethod] = useState<string>("credit_card");
+  const [paymentRef, setPaymentRef] = useState<string>("");
+  const [payingSaving, setPayingSaving] = useState(false);
   useEffect(() => {
     (async () => {
       const session = getAuth();
@@ -79,7 +84,7 @@ const CustomerDashboard = () => {
             const list = await listApiBookings(
               session?.role === "Admin" || !email ? { limit: 100 } : { email, limit: 100 },
             );
-            tApiBookings(list);
+            setApiBookings(list);
           } catch {
             setApiBookings([]);
           }
@@ -128,15 +133,11 @@ const CustomerDashboard = () => {
         const list = await listApiBookings(
           session?.role === "Admin" || !email ? { limit: 100 } : { email, limit: 100 },
         );
-        tApiBookings(list);
+        setApiBookings(list);
       } catch (_e) {
         void 0;
       }
-      try {
-        const u = await listUsersFromApi();
-        setUsers(u);
-      } catch { /* ignore */ }
-    }, 10000);
+    }, 30000);
     return () => clearInterval(id);
   }, []);
   const total = apiBookings.length;
@@ -682,11 +683,27 @@ const CustomerDashboard = () => {
                         </div>
                       </div>
                     )}
-                    {typeof b.estimateTotal === "number" && (
-                      <div className="text-xs text-muted-foreground">
-                        Estimate: ₹{(b.estimateLabour || 0)} + ₹{(b.estimateParts || 0)} + ₹{(b.estimateAdditional || 0)} = ₹{b.estimateTotal}
-                      </div>
-                    )}
+                    {typeof b.estimateTotal === "number" && (() => {
+                      const paid = Array.isArray(b.payments) ? b.payments.reduce((s, x) => s + (Number(x.amount || 0) || 0), 0) : 0;
+                      const due = (typeof b.billTotal === "number" ? b.billTotal : b.estimateTotal || 0) - paid;
+                      const su = String(b.status || "").toUpperCase();
+                      const allowPay = (su === "AWAITING_PAYMENT" || su === "READY_FOR_DELIVERY" || su === "DELIVERED" || su === "COMPLETED") && due > 0;
+                      return (
+                        <div className="text-xs text-muted-foreground flex items-center gap-2">
+                          <span>Estimate: ₹{(b.estimateLabour || 0)} + ₹{(b.estimateParts || 0)} + ₹{(b.estimateAdditional || 0)} = ₹{b.estimateTotal}</span>
+                          {allowPay && (
+                            <Button size="xs" variant="outline" onClick={() => {
+                              setPaymentBookingId(b.id);
+                              setPaymentAmount(String(due));
+                              setPaymentMethod("credit_card");
+                              setPaymentRef("");
+                            }}>
+                              Pay
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {(() => {
                       const su = String(b.status || "").toUpperCase();
                       const canRate = su === "DELIVERED" || su === "COMPLETED";
@@ -711,6 +728,124 @@ const CustomerDashboard = () => {
                           >
                             Review Service
                           </Button>
+                        </div>
+                      );
+                    })()}
+                    {(() => {
+                      const su = String(b.status || "").toUpperCase();
+                      // allow payment when booking is awaiting payment or later statuses
+                      if (su !== "AWAITING_PAYMENT" && su !== "READY_FOR_DELIVERY" && su !== "DELIVERED" && su !== "COMPLETED") return null;
+                      const paid = Array.isArray(b.payments) ? b.payments.reduce((s, x) => s + (Number(x.amount || 0) || 0), 0) : 0;
+                      const due = (typeof b.billTotal === "number" ? b.billTotal : b.estimateTotal || 0) - paid;
+                      if (due <= 0) {
+                        return (
+                          <div className="mt-2 text-xs text-green-600 font-medium">
+                            ✓ Payment Complete
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="mt-2">
+                          <Dialog open={paymentBookingId === b.id} onOpenChange={(o) => {
+                            if (!o) setPaymentBookingId(null);
+                          }}>
+                            <DialogTrigger asChild>
+                              <Button
+                                size="sm"
+                                className="gradient-accent border-0"
+                                onClick={() => {
+                                  setPaymentBookingId(b.id);
+                                  setPaymentAmount(String(due));
+                                  setPaymentMethod("credit_card");
+                                  setPaymentRef("");
+                                }}
+                              >
+                                Pay ₹{due}
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-sm">
+                              <DialogHeader>
+                                <DialogTitle>Payment for {b.service}</DialogTitle>
+                              </DialogHeader>
+                              <div className="space-y-4">
+                                <div className="rounded-lg bg-muted p-3">
+                                  <div className="text-sm text-muted-foreground">Amount Due</div>
+                                  <div className="text-2xl font-bold">₹{due}</div>
+                                </div>
+                                <div className="space-y-2">
+                                  <label className="text-sm font-medium">Payment Amount</label>
+                                  <Input
+                                    type="number"
+                                    value={paymentAmount}
+                                    onChange={(e) => setPaymentAmount(e.target.value)}
+                                    placeholder="Enter amount"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <label className="text-sm font-medium">Payment Method</label>
+                                  <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="credit_card">Credit Card</SelectItem>
+                                      <SelectItem value="debit_card">Debit Card</SelectItem>
+                                      <SelectItem value="upi">UPI</SelectItem>
+                                      <SelectItem value="net_banking">Net Banking</SelectItem>
+                                      <SelectItem value="cash">Cash</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-2">
+                                  <label className="text-sm font-medium">Reference/Transaction ID</label>
+                                  <Input
+                                    value={paymentRef}
+                                    onChange={(e) => setPaymentRef(e.target.value)}
+                                    placeholder="Transaction reference (optional)"
+                                  />
+                                </div>
+                                <Button
+                                  disabled={payingSaving || !paymentAmount}
+                                  onClick={async () => {
+                                    try {
+                                      setPayingSaving(true);
+                                      const amount = Number(paymentAmount);
+                                      if (!amount || amount <= 0) {
+                                        toast({ title: "Invalid amount", variant: "destructive" });
+                                        return;
+                                      }
+                                      await patchBookingApi(b.id, {
+                                        action: "add_payment",
+                                        amount,
+                                        method: paymentMethod,
+                                        reference: paymentRef
+                                      });
+                                      // notify merchant and admins
+                                      const booking = apiBookings.find(x => x.id === b.id);
+                                      if (booking?.merchantId) {
+                                        addNotificationForUser(booking.merchantId, "Payment Received", `₹${amount} paid by customer`);
+                                      }
+                                      users.filter(u => u.role === "admin").forEach(u => {
+                                        if (u.id) addNotificationForUser(u.id, "Customer Payment", `₹${amount} received for booking ${b.service}`);
+                                      });
+                                      const updated = await listApiBookings({ email: session?.email, limit: 100 });
+                                      setApiBookings(updated);
+                                      setPaymentBookingId(null);
+                                      toast({ title: "Payment recorded", description: `₹${amount} received` });
+                                    } catch (err) {
+                                      const msg = err instanceof Error ? err.message : String(err);
+                                      toast({ title: "Payment failed", description: msg, variant: "destructive" });
+                                    } finally {
+                                      setPayingSaving(false);
+                                    }
+                                  }}
+                                  className="w-full gradient-accent border-0"
+                                >
+                                  {payingSaving ? "Processing..." : "Confirm Payment"}
+                                </Button>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
                         </div>
                       );
                     })()}
@@ -954,9 +1089,9 @@ const CustomerDashboard = () => {
             <h2 className="font-heading text-xl font-bold">Invoices</h2>
             <div className="mt-4 space-y-3">
               {(() => {
-                const email = getAuth()?.email || "";
+                const email = (getAuth()?.email || "").toLowerCase();
                 const fromDb = apiBookings
-                  .filter((b) => b.customerEmail === email)
+                  .filter((b) => (b.customerEmail || "").toLowerCase() === email)
                   .filter((b) => {
                     const hasBill = typeof b.billTotal === "number" && b.billTotal > 0;
                     const hasPays = Array.isArray(b.payments) && b.payments.length > 0;

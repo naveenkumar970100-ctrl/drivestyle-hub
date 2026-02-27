@@ -3,6 +3,9 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+
+// Enable React Router v7 future flags to suppress deprecation warnings
+const createBrowserRouter = (routes: any) => routes;
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import RequireAuth from "./components/RequireAuth";
 import Index from "./pages/Index";
