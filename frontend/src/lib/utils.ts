@@ -646,12 +646,11 @@ function clearBookingsStorage() {
     return;
   }
 }
-
 export function getCachedApiBookings(params?: { email?: string; limit?: number }): ApiBooking[] {
   const qs = new URLSearchParams();
   const session = getAuth();
   const email = params?.email || session?.email;
-  if (email) qs.set("email", email);
+  if (email) qs.set("email", email.toLowerCase());
   if (session?.role) qs.set("role", session.role);
   const lim = params?.limit;
   if (typeof lim === "number" && Number.isFinite(lim) && lim > 0) {
@@ -659,8 +658,7 @@ export function getCachedApiBookings(params?: { email?: string; limit?: number }
   } else if (session?.role === "Admin") {
     qs.set("limit", "100");
   }
-  const suffix = qs.toString();
-  const key = suffix || "all";
+  const key = qs.toString() || "all";
   if (!bookingsCache || bookingsCache.key !== key) {
     loadBookingsCacheFromStorage(key);
   }
@@ -669,7 +667,6 @@ export function getCachedApiBookings(params?: { email?: string; limit?: number }
   }
   return [];
 }
-
 export async function listApiBookings(params?: { id?: string; email?: string; limit?: number }): Promise<ApiBooking[]> {
   const qs = new URLSearchParams();
   const session = getAuth();

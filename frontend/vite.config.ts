@@ -9,11 +9,11 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
     hmr: {
-      overlay: false,
+      overlay: true,
     },
     proxy: {
       "/api": {
-        target: "http://localhost:5000",
+          target: "http://localhost:5000",
         changeOrigin: true,
       },
     },
