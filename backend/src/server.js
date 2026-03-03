@@ -16,7 +16,7 @@ const { createUserByAdmin } = require('./controllers/userController');
 const app = express();
 
 const allowedOrigin = config.CLIENT_URL || 'http://localhost:8080';
-const corsOrigins = [allowedOrigin, 'http://localhost:8080', 'http://localhost:8081', 'http://127.0.0.1:8080', 'http://127.0.0.1:8081'];
+const corsOrigins = [allowedOrigin, 'http://localhost:8080', 'http://localhost:8080', 'http://127.0.0.1:8080', 'http://127.0.0.1:8080'];
 app.use(cors({ origin: corsOrigins, credentials: true }));
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
